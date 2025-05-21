@@ -1,0 +1,399 @@
+---
+title: "1. Combining prehashCDS_hash_crop"
+output: html_document
+date: "2025-05-20"
+---
+
+# 0. Setup and Library Imports
+```{r}
+rm(list = ls())
+gc()
+```
+
+```{r}
+library(tidyr)
+library(readr)
+library(ggplot2)
+library(stringr)
+library(monocle3)
+library(dplyr)
+```
+
+# 1. PrehashCDS Imports
+```{r}
+base_dir <- "/burg/iicd/users/qc2358/Kinase_project"
+output_folder <- "CRISPRI_Figures"
+cds_folder <- "11-final-output/cds_precell_prehash.RDS"
+cds_path <- file.path(base_dir, cds_folder)
+
+# Output path for QC images
+output_path <- file.path(base_dir, output_folder)
+```
+
+```{r}
+# Load in CRISPRi data
+cds.pre <- readRDS(cds_path)
+```
+
+# 2. Quality Control and Filtering
+## 2.1. Filter based on UMI counts (500)
+```{r}
+hist(colData(cds.pre)$n.umi, xlim = c(0, 5000), breaks = 200)
+```
+
+```{r}
+plot <- ggplot(
+  colData(cds.pre) %>%
+    as.data.frame() %>%
+    arrange(desc(n.umi)) %>%
+    mutate(cell_rank = dplyr::row_number()),
+  aes(x = log10(cell_rank), y = log10(n.umi))
+) +
+  geom_hline(size = 0.2, yintercept = log10(500)) +
+  geom_point(size = 0.5, stroke = 0) +
+  monocle3:::monocle_theme_opts() +
+  scale_y_continuous(breaks = c(1, 2, 3, 4, 5)) +
+  xlab("Log10 CellRank") +
+  ylab("Log10 UMI") +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 10), # Increase title font size
+    axis.title = element_text(size = 12), # Increase axis labels font size
+    axis.text = element_text(size = 10), # Increase axis text font size
+    legend.position = "bottom",
+    legend.key.width = unit(1, "line"),
+    legend.key.height = unit(0.2, "line"),
+    text = element_text(size = 8) # Base font size for other text
+  )
+
+# Save the updated plot
+ggsave(
+  filename = file.path(output_path, "QC_plots/Unfiltered_UMI_per_cell.png"),
+  plot = plot,
+  width = 2,
+  height = 1.5,
+  dpi = 300
+)
+```
+
+```{r}
+# Filter based on knee plot, and output median umis
+cds.pre <- cds.pre[, colData(cds.pre)$n.umi >= 500]
+
+# Count the median umis after we do the cutoff of 500 or more
+cols_for_writup <- colData(cds.pre) %>% as.data.frame()
+umis_column <- cols_for_writup[, "n.umi"]
+median_umi <- median(umis_column) # 2536
+```
+
+```{r}
+head(colData(cds.pre))
+```
+
+## 2.2. Add columns for log10(n.umi) and % mito
+```{r}
+# Add columns for log10(n.umi) and % mito
+colData(cds.pre)$log10.umi <- colData(cds.pre)$n.umi %>% log10()
+
+mt_genes <- rowData(cds.pre) %>%
+  as.data.frame() %>%
+  filter(grepl("^MT-", gene_short_name) == TRUE)
+
+mt_genes_id <- rownames(mt_genes)
+colData(cds.pre)$percent_mito <- 100 * (colSums(exprs(cds.pre)[mt_genes_id, ]) / colSums(exprs(cds.pre)))
+```
+
+```{r}
+head(colData(cds.pre))
+```
+
+## 2.3. Decompose Cell ID
+```{r}
+cols <- colData(cds.pre) %>%
+  as.data.frame() %>%
+  dplyr::mutate(cell_ID = Cell) %>%
+  tidyr::separate(col = Cell, into = c("P7", "P5", NA, NA, "n1", NA, NA, "n2"), sep = "_") %>%
+  dplyr::mutate(RT = paste("RT_BC_", n1, sep = "")) %>%
+  dplyr::mutate(Lig = paste("Lig_BC_", n2, sep = "")) %>%
+  dplyr::select(-n1, -n2)
+
+head(row.names(cols))
+```
+
+# 3. Assign hash to colData
+```{r}
+# Load in hash table
+hash_folder <- "/hash/hash-final/hashTable.out"
+hash_path <- file.path(base_dir, hash_folder)
+hashTable <- read.table(hash_path, col.names = c("sample", "cell_ID", "oligo", "hash_umis"))
+```
+
+## 3.1. Decompose Cell ID
+```{r}
+# Create a new_cell column without P7
+cols$new_cell <- str_sub(cols$cell_ID, 5)
+```
+
+```{r}
+# Filter the files with cell in cds
+hashTable$new_cell <- str_sub(hashTable$cell_ID, 5)
+hashTable <- hashTable[hashTable$new_cell %in% cols$new_cell, ]
+head(hashTable)
+```
+
+## 3.2. Generate Hash Table Summary (total_umis, top_to_second_best_ratio)
+```{r}
+# Merge the reads from same P7 reads
+hashTable <- hashTable %>%
+  dplyr::group_by(new_cell, oligo, sample) %>%
+  dplyr::summarize(total_reads = sum(hash_umis))
+```
+
+```{r}
+hashTable_summary <- hashTable %>%
+  dplyr::group_by(new_cell) %>%
+  dplyr::mutate(proportion = total_reads / sum(total_reads), total_hash_umis_per_cell_ID = sum(total_reads)) %>%
+  dplyr::arrange(desc(proportion)) %>%
+  dplyr::mutate(rank = row_number()) %>%
+  dplyr::filter(rank %in% c(1, 2)) %>%
+  dplyr::mutate(top_to_second_best_ratio = ifelse(max(rank) > 1, proportion[rank == 1] / proportion[rank == 2], 10)) %>%
+  dplyr::filter(rank == 1)
+
+head(hashTable_summary)
+```
+
+```{r}
+hashTable_summary$treatment <- str_extract(hashTable_summary$oligo, "^[^_]+")
+```
+
+```{r}
+plot <- ggplot(hashTable_summary, aes(x = log10(total_reads))) +
+  geom_histogram() +
+  monocle3:::monocle_theme_opts()
+ggsave(
+  filename = file.path(output_path, "QC_plots/hashTable_summary_total_reads.png"),
+  plot = plot,
+  width = 2,
+  height = 1.5,
+  dpi = 300
+)
+
+plot <- ggplot(hashTable_summary[hashTable_summary$total_reads > 5, ], aes(x = log10(top_to_second_best_ratio))) +
+  geom_histogram() +
+  monocle3:::monocle_theme_opts()
+ggsave(
+  filename = file.path(output_path, "QC_plots/hashTable_summary_top_to_second_best_ratio.png"),
+  plot = plot,
+  width = 2,
+  height = 1.5,
+  dpi = 300
+)
+```
+
+## 3.3. Combine Hash Table Summary to colData
+```{r}
+cols <- cols %>%
+  left_join(hashTable_summary, by = c("new_cell" = "new_cell", "sample" = "sample")) %>%
+  dplyr::select(-Size_Factor, -proportion, -rank)
+
+dim(cols)
+```
+
+```{r}
+rownames(cols) <- cols$cell_ID
+```
+
+```{r}
+# Assign our cols dataframe as colData(cds)
+colData(cds.pre) <- DataFrame(cols)
+```
+
+```{r}
+median(colData(cds.pre[, !is.na(colData(cds.pre)$total_hash_umis_per_cell_ID)])$total_hash_umis_per_cell_ID) # 14
+```
+
+# 4. Assign CROP-seq data to colData
+```{r}
+# Load in CROP-seq data
+crop_folder <- "CROP/CROP-final/CROPTable5.out"
+crop_path <- file.path(base_dir, crop_folder)
+cropTable <- read.table(crop_path, col.names = c("sample", "cell_ID", "sgRNA", "axis", "reads"))
+head(arrange(cropTable, desc(reads)))
+```
+
+## 4.1. Decompose Cell ID
+```{r}
+cropTable$p7 <- substring(cropTable$cell_ID, 1, 3)
+category_counts <- table(cropTable$p7)
+df <- data.frame(category = names(category_counts), count = as.numeric(category_counts))
+ggplot(df, aes(x = category, y = count)) +
+  geom_bar(stat = "identity", fill = "skyblue") +
+  labs(x = "Categories", y = "Count", title = "Histogram of Categories") +
+  theme_minimal()
+```
+
+```{r}
+# Filter the files with cell in cds
+cropTable$new_cell <- str_sub(cropTable$cell_ID, 5)
+cropTable <- cropTable[cropTable$new_cell %in% colData(cds.pre)$new_cell, ]
+head(cropTable$new_cell)
+```
+
+## 4.2. Generate CROP Table Summary (total_umis, top_to_second_best_ratio, second_to_third_best_ratio)
+```{r}
+# there is a problem here that might be ok if we toss things with low reads, but the problem is that the real crop-seq transcripts should only have a P7 that is 01C, 02C or 03C. Here we are picking up some that are part of the RNA or hash i think because it is 01A_A01_RT_BC_101_Lig_BC_23 when it should be something like 03C_E07_RT_BC_104_Lig_BC_9
+```
+
+```{r}
+# Merge the reads from same P7 reads
+cropTable <- cropTable %>%
+  dplyr::group_by(new_cell, sgRNA) %>%
+  dplyr::summarize(total_reads = sum(reads))
+```
+
+```{r}
+# Merge the reads from different P7 reads becaused I used 2 p7 for 2 different pcrs to generate crop called total_sgrna_read_per_cell, which caused some issues. also sgRNA_proportion
+cropTable_t <- cropTable %>%
+  dplyr::group_by(new_cell) %>%
+  dplyr::mutate(sgRNA_proportion = total_reads / sum(total_reads), total_sgrna_read_per_cell = sum(total_reads))
+```
+
+```{r}
+# Generate top3 ratios and guide names for each cell
+cropTable_summary <- cropTable_t %>%
+  dplyr::group_by(new_cell) %>%
+  dplyr::arrange(desc(sgRNA_proportion)) %>%
+  dplyr::mutate(rank = row_number()) %>%
+  dplyr::mutate(
+    top_to_second = ifelse(max(rank) > 1, sgRNA_proportion[rank == 1] / sgRNA_proportion[rank == 2], 10),
+    second_to_third = ifelse(max(rank) > 2, sgRNA_proportion[rank == 2] / sgRNA_proportion[rank == 3], NA),
+    third_to_next = ifelse(max(rank) > 3, sgRNA_proportion[rank == 3] / sgRNA_proportion[rank == 4], NA),
+    top_proportion = sgRNA_proportion[rank == 1],
+    second_proportion = ifelse(max(rank) > 1, sgRNA_proportion[rank == 2], NA),
+    third_proportion = ifelse(max(rank) > 2, sgRNA_proportion[rank == 3], NA),
+    top_sg = ifelse(sgRNA_proportion[rank == 1] >= 0.2, sgRNA[rank == 1], NA),
+    second_sg = ifelse((max(rank) > 1) && (sgRNA_proportion[rank == 2] >= 0.2), sgRNA[rank == 2], NA),
+    third_sg = ifelse((max(rank) > 2) && (sgRNA_proportion[rank == 3] >= 0.2), sgRNA[rank == 3], NA),
+  ) %>%
+  dplyr::filter(rank == 1)
+```
+
+```{r}
+head(cropTable_summary)
+```
+
+```{r}
+ggplot(cropTable_summary, aes(x = log10(total_sgrna_read_per_cell))) +
+  geom_histogram() +
+  monocle3:::monocle_theme_opts()
+ggsave(
+  filename = file.path(output_path, "QC_plots/crop_table_summary_total_sgrna_read_per_cell_histogram.png"),
+  plot = plot,
+  width = 2,
+  height = 1.5,
+  dpi = 300
+)
+
+ggplot(cropTable_summary, aes(x = log10(top_to_second))) +
+  geom_histogram() +
+  monocle3:::monocle_theme_opts()
+ggsave(
+  filename = file.path(output_path, "QC_plots/crop_table_summary_top_to_second_histogram.png"),
+  plot = plot,
+  width = 2,
+  height = 1.5,
+  dpi = 300
+)
+```
+
+## 4.4. Combine CROP Table Summary to colData
+```{r}
+cols_CDS_hash <- colData(cds.pre) %>% as.data.frame()
+head(cols_CDS_hash)
+```
+
+```{r}
+# Combine the cropTable summary and coldata of cds
+cols_merge_CROP <- cols_CDS_hash %>%
+  left_join(cropTable_summary, by = c("new_cell" = "new_cell"))
+rownames(cols_merge_CROP) <- cols_merge_CROP$cell_ID
+head(cols_merge_CROP)
+```
+
+```{r}
+# Identical test
+identical(colnames(cds.pre), row.names(cols_merge_CROP))
+
+# If identical test is false run the next 2 lines
+# cols_merge_CROP_subset <- cols_merge_CROP %>% filter(new_cell %in% colData(cds.pre)$new_cell)
+# cols_merge_CROP_subset <- cols_merge_CROP_subset[colData(cds.pre)$new_cell,]
+# identical(colnames(cds.pre), row.names(cols_merge_CROP))
+```
+
+```{r}
+# Assign our cols dataframe as colData(cds)
+colData(cds.pre) <- DataFrame(cols_merge_CROP)
+```
+
+# 5. Check sgRNAs in library
+## 5.1. Cells with sgRNAs
+```{r}
+head(exprs(cds.pre))
+```
+
+```{r}
+print(dim(cds.pre)) # 58347 200473
+print(dim(cds.pre[, !is.na(colData(cds.pre)$sgRNA)])) # this is the cells with a sgRNA # 58347 191841
+```
+
+```{r}
+cds <- cds.pre[, !is.na(colData(cds.pre)$sgRNA)]
+```
+
+```{r}
+# Convert colData to a data frame
+colData_df <- as.data.frame(colData(cds))
+sgRNAs_count <- colData_df %>%
+  dplyr::group_by(sgRNA) %>%
+  dplyr::summarise(count = n()) %>%
+  dplyr::arrange(desc(count))
+
+head(sgRNAs_count)
+```
+
+```{r}
+ggplot(sgRNAs_count, aes(x = sgRNA, y = count)) +
+  geom_bar(stat = "identity", width = 1) +
+  geom_hline(yintercept = mean(sgRNAs_count$count), linetype = "dashed", color = "gray1", 2) +
+  labs(
+    title = "Histogram of sgRNA.sequence counts",
+    x = "sgRNA.sequence",
+    y = "Count"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  theme(panel.background = element_rect(fill = "white", color = "white")) +
+  theme(axis.text.x = element_text(size = 2))
+```
+
+```{r}
+dim(sgRNAs_count) # 2918
+```
+
+## 5.2. Compare top, second, third sgRNAs
+```{r}
+# Number of cells with guides
+dim(colData(cds.pre)[!is.na(colData(cds.pre)$top_sg), ]) # 171052
+dim(colData(cds.pre)[!is.na(colData(cds.pre)$second_sg), ]) # 46568
+dim(colData(cds.pre)[!is.na(colData(cds.pre)$third_sg), ]) # 14176
+```
+
+```{r}
+dim(colData(cds.pre)[!is.na(colData(cds.pre)$second_sg), ]) / dim(colData(cds.pre)[!is.na(colData(cds.pre)$top_sg), ]) # 0.272
+```
+
+# 6. Save the cds object
+```{r}
+cutoff_folder <- "11-final-output/CDS_crop_hash_FINAL_CRISPR_GBM_T_cells_500_cutoff.rds"
+cutoff_path <- file.path(base_dir, cutoff_folder)
+saveRDS(cds.pre, cutoff_path)
+```

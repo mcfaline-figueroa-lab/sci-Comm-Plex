@@ -1,0 +1,213 @@
+---
+title: "4. Analysis_pipeline_crisprI_gbm_Tcell_QC_20250104"
+output: html_document
+date: "2025-05-20"
+---
+
+# 0. Setup and Library Imports
+```{r}
+rm(list = ls())
+gc()
+```
+
+```{r}
+library(devtools)
+library(parallel)
+library(ggplot2)
+library(ggridges)
+library(gridExtra)
+library(plyr)
+library(tidyr)
+library(tibble)
+library(pheatmap)
+library(piano)
+library(DelayedArray)
+library(monocle3)
+library(UpSetR)
+library(dplyr)
+library(ggrepel)
+library(ggpubr)
+```
+
+```{r}
+source("/burg/iicd/users/qc2358/Kinase_project/github_repos/sci-plex/bin/cell_cycle.R")
+source("/burg/iicd/users/qc2358/Kinase_project/github_repos/sci-plex/bin/dispersions_functions.R")
+cc.genes <- readRDS("/burg/iicd/users/qc2358/Kinase_project/github_repos/sci-plex/bin/cc.genes.RDS")
+```
+
+```{r}
+output_folder <- "CRISPRI_Figures"
+base_dir <- "/burg/iicd/users/qc2358/Kinase_project"
+setwd(base_dir)
+
+cds_folder <- "11-final-output/CDS_crop_hash_FINAL_CRISPR_GBM_T_cells_500_cutoff_after_qc.RDS"
+cds_path <- file.path(base_dir, cds_folder)
+cds <- readRDS(cds_path)
+```
+
+# 1. Filter out cells without top_sg
+```{r}
+cds <- cds[, !is.na(colData(cds)$top_sg)]
+dim(cds) # 58347 171023
+```
+
+```{r}
+colData(cds)$gene_id <- colData(cds)$gene
+dim(cds[, !is.na(colData(cds)$gene_id)]) # 58347 171023
+```
+
+```{r}
+colData(cds) %>%
+  as.data.frame() %>%
+  filter(!is.na(gene_id)) %>%
+  group_by(gene_id) %>%
+  dplyr::summarise(n = n()) %>%
+  select(n) %>%
+  pull() %>%
+  median() # 312
+```
+
+```{r}
+colData(cds)$replicate <- sapply(colData(cds)$oligo, function(x) {
+  split_str <- strsplit(x, "_")[[1]]
+  split_str[2]
+})
+colData(cds)$replicate <- gsub("R1", "replicate_1", colData(cds)$replicate)
+colData(cds)$replicate <- gsub("R2", "replicate_2", colData(cds)$replicate)
+```
+
+```{r}
+cds <- estimate_size_factors(cds)
+cds <- estimate_cell_cycle(cds,
+  g1s_markers = cc.genes$s.genes,
+  g2m_markers = cc.genes$g2m.genes
+)
+```
+
+```{r}
+cds <- cds[, !is.na(colData(cds)$treatment)]
+dim(cds) # 58347 168330
+```
+
+```{r}
+convert_treatment <- function(treatment) {
+  if (treatment == "Untreated") {
+    return(0)
+  } else if (grepl("1to", treatment)) {
+    return(as.numeric(sub("1to", "", treatment)))
+  } else {
+    return(NA)
+  }
+}
+colData(cds)$dose <- sapply(colData(cds)$treatment, convert_treatment)
+colData(cds)$treatment <- "T-cells"
+head(colData(cds))
+```
+
+```{r}
+cds <- detect_genes(cds)
+```
+
+```{r}
+median(colData(cds)$n.umi) # 2518
+```
+
+# 2. Filter out lowly expressed genes
+```{r}
+expressed_genes <- row.names(fData(cds)[Matrix::rowSums(exprs(cds) > 0) >
+  dim(cds)[2] * 0.05, ])
+length(expressed_genes) # 9245
+```
+
+# 3. Estimate dispersion and select top 5000 highly variable genes
+```{r}
+disp_table <- estimateDispersionsForCellDataSet(cds,
+  min_cells_detected = 100,
+  removeOutliers = FALSE
+)
+
+disp_table <-
+  dispersionTable(disp_table) %>%
+  mutate(excess_disp = (dispersion_empirical - dispersion_fit) / dispersion_fit)
+
+disp_table <- tibble(
+  gene_id = disp_table$gene_id,
+  mean_expression = disp_table$mean_expression,
+  excess_disp = disp_table$excess_disp
+)
+
+unsup_clustering_genes <-
+  disp_table %>%
+  dplyr::arrange(desc(excess_disp)) %>%
+  dplyr::slice(1:5000) %>%
+  ungroup() %>%
+  pull(gene_id) %>%
+  unique()
+
+length(unsup_clustering_genes) # 5000
+```
+
+# 4. Dimension reduction
+```{r}
+library(Matrix)
+cds <- preprocess_cds(cds,
+  num_dim = 15,
+  use_genes = unsup_clustering_genes
+)
+
+cds <- reduce_dimension(cds,
+  umap.n_neighbors = 20L,
+  umap.min_dist = 0.1,
+  max_components = 2,
+  # preprocess_method = "PCA",
+  umap.fast_sgd = FALSE,
+  cores = 1
+)
+
+colData(cds)$UMAP1 <- reducedDims(cds)[["UMAP"]][, 1]
+colData(cds)$UMAP2 <- reducedDims(cds)[["UMAP"]][, 2]
+
+cds <- cluster_cells(cds, reduction_method = "PCA", resolution = 2e-4, random_seed = 2016L, num_iter = 1)
+colData(cds)$PCA_Cluster <- clusters(cds, reduction_method = "PCA")
+length(unique(colData(cds)$PCA_Cluster)) # 15
+```
+
+```{r}
+saveRDS(cds, "preprocessed_cds.rds")
+cds <- readRDS("preprocessed_cds.rds")
+```
+
+```{r}
+plot <- plot_cells(cds, color_cells_by = "PCA_Cluster") +
+  theme(
+    legend.position = "right",
+    legend.key.width = unit(0.2, "line"),
+    legend.key.height = unit(0.2, "line")
+  )
+ggsave("CRISPRI_Figures/Clustering/PCA_Cluster_plot.png", plot)
+
+plot <- plot_cells(cds,
+  genes = c("CD8A", "CD3D"),
+  show_trajectory_graph = FALSE
+)
+ggsave("CRISPRI_Figures/Clustering/CD8A_CD3D_plot.png", plot)
+```
+
+# 5. Filter out T cells
+```{r}
+cds <- cds[, colData(cds)$PCA_Cluster %in% c("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14")]
+```
+
+```{r}
+plot <- plot_cells(cds, color_cells_by = "PCA_Cluster") +
+  theme(
+    legend.position = "right",
+    legend.key.width = unit(0.2, "line"),
+    legend.key.height = unit(0.2, "line")
+  )
+ggsave("CRISPRI_Figures/Clustering/PCA_Cluster_plot_without_Tcells.png", plot)
+```
+
+```{r}
+saveRDS(cds, "preprocessed_cds_without_Tcells.rds")
+```

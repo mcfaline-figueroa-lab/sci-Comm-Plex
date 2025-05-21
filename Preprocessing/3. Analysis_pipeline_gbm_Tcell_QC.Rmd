@@ -1,0 +1,816 @@
+---
+title: "3. Analysis_pipeline_crisprI_gbm_Tcell_QC_20250104"
+output: html_document
+date: "2025-05-20"
+---
+
+# 0. Setup and Library Imports
+```{r}
+rm(list = ls())
+gc()
+```
+
+```{r}
+library(devtools)
+library(parallel)
+library(ggplot2)
+library(ggridges)
+library(gridExtra)
+library(plyr)
+library(dplyr)
+library(tidyr)
+library(tibble)
+library(pheatmap)
+library(piano)
+library(DelayedArray)
+library(monocle3)
+library(UpSetR)
+```
+
+```{r}
+source("/burg/iicd/users/qc2358/Kinase_project/github_repos/sci-plex/bin/cell_cycle.R")
+source("/burg/iicd/users/qc2358/Kinase_project/github_repos/sci-plex/bin/dispersions_functions.R")
+cc.genes <- readRDS("/burg/iicd/users/qc2358/Kinase_project/github_repos/sci-plex/bin/cc.genes.RDS")
+```
+
+```{r}
+protein_to_gene_map <- readRDS("/burg/iicd/users/qc2358/Kinase_project/github_repos/sci-Plex-GxE/Kinome_GxE_screen/KinMap_kinase_protein_to_gene_map.rds")
+```
+
+# 1. Functions for comparing knockdown effect
+```{r}
+calculate_mean_target_knockdown <- function(cds, gene_short_name_list, protein_to_gene_map) {
+  cds_subset <- cds[protein_to_gene_map$id, ]
+  cds_exprs <- SingleCellExperiment::counts(cds_subset)
+  cds_exprs <- Matrix::t(Matrix::t(cds_exprs) / monocle3:::size_factors(cds_subset))
+  cds_exprs <- reshape2::melt(as.matrix(cds_exprs))
+
+  colnames(cds_exprs) <- c("id", "cell", "expression")
+  cds_exprs$id <- as.character(cds_exprs$id)
+  cds_exprs$cell <- as.character(cds_exprs$cell)
+
+  # protein_to_gene_map contains ensembl id, HGNC gene_short_name and the protein name
+  cds_exprs <- left_join(cds_exprs, protein_to_gene_map, by = "id")
+
+  Mean_expression_by_target <- list()
+
+  # Clean this up to a map function
+  targets <- colData(cds) %>%
+    as.data.frame() %>%
+    filter(!(gene_id %in% c("NTC", "random"))) %>%
+    pull(gene_id) %>%
+    unique() %>%
+    sort()
+
+  for (target in targets) {
+    target_cells <- colData(cds) %>%
+      as.data.frame() %>%
+      filter(gene_id == target) %>%
+      pull(cell)
+
+    target_cells_2_cutoff <- colData(cds) %>%
+      as.data.frame() %>%
+      filter(gene_id == target & total_sgrna_read_per_cell >= 2) %>%
+      pull(cell)
+
+    target_cells_5_cutoff <- colData(cds) %>%
+      as.data.frame() %>%
+      filter(gene_id == target & total_sgrna_read_per_cell >= 5) %>%
+      pull(cell)
+
+    target_cells_10_cutoff <- colData(cds) %>%
+      as.data.frame() %>%
+      filter(gene_id == target & total_sgrna_read_per_cell >= 10) %>%
+      pull(cell)
+
+    target_exprs <- cds_exprs %>%
+      filter(gene_id == target &
+        cell %in% target_cells) %>%
+      pull(expression) %>%
+      mean()
+
+    target_exprs_2_cutoff <- cds_exprs %>%
+      filter(gene_id == target &
+        cell %in% target_cells_2_cutoff) %>%
+      pull(expression) %>%
+      mean()
+
+    target_exprs_5_cutoff <- cds_exprs %>%
+      filter(gene_id == target &
+        cell %in% target_cells_5_cutoff) %>%
+      pull(expression) %>%
+      mean()
+
+    target_exprs_10_cutoff <- cds_exprs %>%
+      filter(gene_id == target &
+        cell %in% target_cells_10_cutoff) %>%
+      pull(expression) %>%
+      mean()
+
+    NTC_cells <- colData(cds) %>%
+      as.data.frame() %>%
+      filter(gene_id == "NTC") %>%
+      pull(cell)
+
+    NTC_cells_2_cutoff <- colData(cds) %>%
+      as.data.frame() %>%
+      filter(gene_id == "NTC" & total_sgrna_read_per_cell >= 2) %>%
+      pull(cell)
+
+    NTC_cells_5_cutoff <- colData(cds) %>%
+      as.data.frame() %>%
+      filter(gene_id == "NTC" & total_sgrna_read_per_cell >= 5) %>%
+      pull(cell)
+
+    NTC_cells_10_cutoff <- colData(cds) %>%
+      as.data.frame() %>%
+      filter(gene_id == "NTC" & total_sgrna_read_per_cell >= 10) %>%
+      pull(cell)
+
+    NTC_exprs <- cds_exprs %>%
+      filter(gene_id == target &
+        cell %in% NTC_cells) %>%
+      pull(expression) %>%
+      mean()
+
+    NTC_exprs_2_cutoff <- cds_exprs %>%
+      filter(gene_id == target &
+        cell %in% NTC_cells_2_cutoff) %>%
+      pull(expression) %>%
+      mean()
+
+    NTC_exprs_5_cutoff <- cds_exprs %>%
+      filter(gene_id == target &
+        cell %in% NTC_cells_5_cutoff) %>%
+      pull(expression) %>%
+      mean()
+
+    NTC_exprs_10_cutoff <- cds_exprs %>%
+      filter(gene_id == target &
+        cell %in% NTC_cells_10_cutoff) %>%
+      pull(expression) %>%
+      mean()
+
+    knockdown <- target_exprs / NTC_exprs
+    knockdown_2_cutoff <- target_exprs_2_cutoff / NTC_exprs_2_cutoff
+    knockdown_5_cutoff <- target_exprs_5_cutoff / NTC_exprs_5_cutoff
+    knockdown_10_cutoff <- target_exprs_10_cutoff / NTC_exprs_10_cutoff
+
+    set.seed(2016L)
+    target_random_cells <- colData(cds) %>%
+      as.data.frame() %>%
+      sample_n(length(target_cells)) %>%
+      pull(cell) %>%
+      as.character()
+
+    set.seed(2016L)
+    target_random_cells_2_cutoff <- colData(cds) %>%
+      as.data.frame() %>%
+      filter(total_sgrna_read_per_cell >= 2) %>%
+      sample_n(length(target_cells_2_cutoff)) %>%
+      pull(cell) %>%
+      as.character()
+
+    set.seed(2016L)
+    target_random_cells_5_cutoff <- colData(cds) %>%
+      as.data.frame() %>%
+      filter(total_sgrna_read_per_cell >= 5) %>%
+      sample_n(length(target_cells_5_cutoff)) %>%
+      pull(cell) %>%
+      as.character()
+
+    set.seed(2016L)
+    target_random_cells_10_cutoff <- colData(cds) %>%
+      as.data.frame() %>%
+      filter(total_sgrna_read_per_cell >= 10) %>%
+      sample_n(length(target_cells_10_cutoff)) %>%
+      pull(cell) %>%
+      as.character()
+
+    target_random_exprs <- cds_exprs %>%
+      filter(gene_id == target &
+        cell %in% target_random_cells) %>%
+      pull(expression) %>%
+      mean()
+
+    target_random_exprs_2_cutoff <- cds_exprs %>%
+      filter(gene_id == target &
+        cell %in% target_random_cells_2_cutoff) %>%
+      pull(expression) %>%
+      mean()
+
+    target_random_exprs_5_cutoff <- cds_exprs %>%
+      filter(gene_id == target &
+        cell %in% target_random_cells_5_cutoff) %>%
+      pull(expression) %>%
+      mean()
+
+    target_random_exprs_10_cutoff <- cds_exprs %>%
+      filter(gene_id == target &
+        cell %in% target_random_cells_10_cutoff) %>%
+      pull(expression) %>%
+      mean()
+
+    set.seed(2016L)
+    NTC_random_cells <- colData(cds) %>%
+      as.data.frame() %>%
+      sample_n(length(NTC_cells)) %>%
+      pull(cell) %>%
+      as.character()
+
+    set.seed(2016L)
+    NTC_random_cells_2_cutoff <- colData(cds) %>%
+      as.data.frame() %>%
+      filter(total_sgrna_read_per_cell >= 2) %>%
+      sample_n(length(NTC_cells_2_cutoff)) %>%
+      pull(cell) %>%
+      as.character()
+
+    set.seed(2016L)
+    NTC_random_cells_5_cutoff <- colData(cds) %>%
+      as.data.frame() %>%
+      filter(total_sgrna_read_per_cell >= 5) %>%
+      sample_n(length(NTC_cells_5_cutoff)) %>%
+      pull(cell) %>%
+      as.character()
+
+    set.seed(2016L)
+    NTC_random_cells_10_cutoff <- colData(cds) %>%
+      as.data.frame() %>%
+      filter(total_sgrna_read_per_cell >= 10) %>%
+      sample_n(length(NTC_cells_10_cutoff)) %>%
+      pull(cell) %>%
+      as.character()
+
+    NTC_random_exprs <- cds_exprs %>%
+      filter(gene_id == target &
+        cell %in% NTC_random_cells) %>%
+      pull(expression) %>%
+      mean()
+
+    NTC_random_exprs_2_cutoff <- cds_exprs %>%
+      filter(gene_id == target &
+        cell %in% NTC_random_cells_2_cutoff) %>%
+      pull(expression) %>%
+      mean()
+
+    NTC_random_exprs_5_cutoff <- cds_exprs %>%
+      filter(gene_id == target &
+        cell %in% NTC_random_cells_5_cutoff) %>%
+      pull(expression) %>%
+      mean()
+
+    NTC_random_exprs_10_cutoff <- cds_exprs %>%
+      filter(gene_id == target &
+        cell %in% NTC_random_cells_10_cutoff) %>%
+      pull(expression) %>%
+      mean()
+
+    random_knockdown <- target_random_exprs / NTC_random_exprs
+    random_knockdown_2_cutoff <- target_random_exprs_2_cutoff / NTC_random_exprs_2_cutoff
+    random_knockdown_5_cutoff <- target_random_exprs_5_cutoff / NTC_random_exprs_5_cutoff
+    random_knockdown_10_cutoff <- target_random_exprs_10_cutoff / NTC_random_exprs_10_cutoff
+
+    Mean_expression_by_target[[target]] <- data.frame(
+      gene_id = target,
+      mean_knockdown = knockdown,
+      mean_random_knockdown = random_knockdown,
+      mean_knockdown_2_cutoff = knockdown_2_cutoff,
+      mean_random_knockdown_2_cutoff = random_knockdown_2_cutoff,
+      mean_knockdown_5_cutoff = knockdown_5_cutoff,
+      mean_random_knockdown_5_cutoff = random_knockdown_5_cutoff,
+      mean_knockdown_10_cutoff = knockdown_10_cutoff,
+      mean_random_knockdown_10_cutoff = random_knockdown_10_cutoff
+    )
+
+    message("finished ", target)
+  }
+
+  Mean_expression <- do.call("rbind", Mean_expression_by_target)
+
+  return(Mean_expression)
+}
+```
+
+# 2. Load in the data
+```{r}
+output_folder <- "CRISPRI_Figures"
+base_dir <- "/burg/iicd/users/qc2358/Kinase_project"
+setwd(base_dir)
+
+cds_folder <- "11-final-output/CDS_crop_hash_FINAL_CRISPR_GBM_T_cells_500_cutoff.rds"
+cds_path <- file.path(base_dir, cds_folder)
+cds <- readRDS(cds_path)
+dim(cds) # 58347 200473
+```
+
+```{r}
+# Remove doublets
+doublet_cells <- read.csv("11-final-output/doublet_info.csv")
+doublet_cells <- doublet_cells %>% 
+  filter(is_doublet == "True") %>% 
+  pull(cell_ID)
+cds <- cds[, !colData(cds)$cell_ID %in% doublet_cells]
+dim(cds) # 58347 200436
+```
+
+```{r}
+# Remove cells with NA sgRNA
+cds <- cds[, !is.na(colData(cds)$sgRNA)]
+dim(cds) # 58347 191805
+output_path <- file.path(base_dir, output_folder)
+```
+
+```{r}
+median(colData(cds)$n.umi) # 2681
+```
+
+```{r}
+head(colData(cds))
+```
+
+```{r}
+cds_data <- colData(cds) %>% as.data.frame()
+```
+
+```{r}
+hash_cds <- cds[, !is.na(colData(cds)$treatment)]
+```
+
+# 3. Evaluate sgRNA efficiency
+## 3.1 Clean up guide names
+```{r}
+# Clean up NTC and random
+colData(cds)$sgRNA <- sapply(colData(cds)$sgRNA, function(x) {
+  if (grepl("negative_control", x)) {
+    return("NTC")
+  }
+  if (grepl("non-targeting", x)) {
+    return("NTC")
+  }
+  if (grepl("originalIDTorder", x)) {
+    return("random")
+  }
+  if (grepl("randomregion", x)) {
+    return("random")
+  }
+  return(x)
+})
+```
+
+```{r}
+# Clean up gene names
+cds <- cds[, !is.na(colData(cds)$sgRNA)]
+colData(cds)$gene <- sapply(colData(cds)$sgRNA, function(x) {
+  stringr::str_split(x, pattern = "_")[[1]][1]
+})
+```
+
+```{r}   
+colData(cds)$second_sg <- sapply(colData(cds)$second_sg, function(x) {
+  if (grepl("negative_control", x)) {
+    return("NTC")
+  }
+  if (grepl("non-targeting", x)) {
+    return("NTC")
+  }
+  if (grepl("originalIDTorder", x)) {
+    return("random")
+  }
+  if (grepl("randomregion", x)) {
+    return("random")
+  }
+  return(x)
+})
+
+colData(cds)$third_sg <- sapply(colData(cds)$third_sg, function(x) {
+  if (grepl("negative_control", x)) {
+    return("NTC")
+  }
+  if (grepl("non-targeting", x)) {
+    return("NTC")
+  }
+  if (grepl("originalIDTorder", x)) {
+    return("random")
+  }
+  if (grepl("randomregion", x)) {
+    return("random")
+  }
+  return(x)
+})
+```
+
+```{r}
+colData(cds)$second_sg_gene <- sapply(colData(cds)$second_sg, function(x) {
+  stringr::str_split(x, pattern = "_")[[1]][1]
+})
+```
+
+```{r}
+colData(cds)$third_sg_gene <- sapply(colData(cds)$third_sg, function(x) {
+  stringr::str_split(x, pattern = "_")[[1]][1]
+})
+```
+
+## 3.2. Compare sgRNA counts in untreated and T cell treated
+```{r}
+Untreated_cds <- cds[, colData(cds)$treatment %in% c("Untreated")]
+CRISPR_sgRNA_distribution_summary_df_untreated <- colData(Untreated_cds) %>%
+  as.data.frame() %>%
+  group_by(gene) %>%
+  dplyr::mutate(CRISPR_count = n()) %>%
+  ungroup() %>%
+  dplyr::mutate(total_CRISPR_count = n()) %>%
+  dplyr::select(gene, CRISPR_count, total_CRISPR_count) %>%
+  distinct() %>%
+  mutate(CRISPR_frequency = (CRISPR_count / total_CRISPR_count) * 100)
+```
+
+### 3.2.1. 1:1
+```{r}
+tcell_cds <- cds[, colData(cds)$treatment %in% c("1to1")]
+CRISPR_sgRNA_distribution_summary_df_tcell <- colData(tcell_cds) %>%
+  as.data.frame() %>%
+  group_by(gene) %>%
+  dplyr::mutate(CRISPR_count = n()) %>%
+  ungroup() %>%
+  dplyr::mutate(total_CRISPR_count = n()) %>%
+  dplyr::select(gene, CRISPR_count, total_CRISPR_count) %>%
+  distinct() %>%
+  mutate(CRISPR_frequency = (CRISPR_count / total_CRISPR_count) * 100)
+```
+
+```{r}
+CRISPR_sgRNA_proportions <- inner_join(CRISPR_sgRNA_distribution_summary_df_untreated, CRISPR_sgRNA_distribution_summary_df_tcell, by = "gene")
+CRISPR_sgRNA_proportions$relative_proportion <- log(CRISPR_sgRNA_proportions$CRISPR_frequency.x / CRISPR_sgRNA_proportions$CRISPR_frequency.y) %>% scale()
+CRISPR_rank <- CRISPR_sgRNA_proportions %>%
+  arrange(relative_proportion) %>%
+  pull(gene)
+```
+
+```{r fig.width=6}
+ggplot(CRISPR_sgRNA_proportions, aes(x = factor(gene, levels = CRISPR_rank), y = relative_proportion, label = gene, color = abs(relative_proportion) > 2)) +
+  geom_point(size = 1, stroke = 0) +
+  ggrepel::geom_label_repel(
+    data = subset(CRISPR_sgRNA_proportions, abs(relative_proportion) > 2),
+    size = 1,
+    segment.size = 0.1,
+    label.size = 0.1,
+    box.padding = 0,
+    label.padding = 0.1,
+    color = "black"
+  ) +
+  monocle3:::monocle_theme_opts() +
+  scale_color_manual(values = c("TRUE" = "firebrick3", "FALSE" = "black")) +
+  theme(
+    text = element_text(size = 6),
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    legend.position = "none"
+  ) +
+  ylab("Proportion relative to\n T cell treatment") +
+  xlab("Perturbation")
+ggsave(file.path(output_path, "/QC_plots/gRNA_distribution_relative_to_1t1.png"), height = 2, width = 2.5, dpi = 300)
+```
+
+```{r}
+saveRDS(CRISPR_sgRNA_proportions, file = file.path(output_path, "/QC_plots/gRNA_distribution_relative_to_1t1.rds"))
+```
+
+### 3.2.2. 1:0.5
+```{r}
+tcell_cds <- cds[, colData(cds)$treatment %in% c("1to0.5")]
+CRISPR_sgRNA_distribution_summary_df_tcell <- colData(tcell_cds) %>%
+  as.data.frame() %>%
+  group_by(gene) %>%
+  dplyr::mutate(CRISPR_count = n()) %>%
+  ungroup() %>%
+  dplyr::mutate(total_CRISPR_count = n()) %>%
+  dplyr::select(gene, CRISPR_count, total_CRISPR_count) %>%
+  distinct() %>%
+  mutate(CRISPR_frequency = (CRISPR_count / total_CRISPR_count) * 100)
+```
+
+```{r}
+CRISPR_sgRNA_proportions <- inner_join(CRISPR_sgRNA_distribution_summary_df_untreated, CRISPR_sgRNA_distribution_summary_df_tcell, by = "gene")
+CRISPR_sgRNA_proportions$relative_proportion <- log(CRISPR_sgRNA_proportions$CRISPR_frequency.x / CRISPR_sgRNA_proportions$CRISPR_frequency.y) %>% scale()
+CRISPR_rank <- CRISPR_sgRNA_proportions %>%
+  arrange(relative_proportion) %>%
+  pull(gene)
+```
+
+```{r fig.width=6}
+ggplot(CRISPR_sgRNA_proportions, aes(x = factor(gene, levels = CRISPR_rank), y = relative_proportion, label = gene, color = abs(relative_proportion) > 2)) +
+  geom_point(size = 1, stroke = 0) +
+  ggrepel::geom_label_repel(
+    data = subset(CRISPR_sgRNA_proportions, abs(relative_proportion) > 2),
+    size = 1,
+    segment.size = 0.1,
+    label.size = 0.1,
+    box.padding = 0,
+    label.padding = 0.1,
+    color = "black"
+  ) +
+  monocle3:::monocle_theme_opts() +
+  scale_color_manual(values = c("TRUE" = "firebrick3", "FALSE" = "black")) +
+  theme(
+    text = element_text(size = 6),
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    legend.position = "none"
+  ) +
+  ylab("Proportion relative to\n T cell treatment") +
+  xlab("Perturbation")
+ggsave(file.path(output_path, "/QC_plots/gRNA_distribution_relative_to_1t0.5.png"), height = 2, width = 2.5, dpi = 300)
+```
+
+```{r}
+saveRDS(CRISPR_sgRNA_proportions, file = file.path(output_path, "/QC_plots/gRNA_distribution_relative_to_1t0.5.rds"))
+```
+
+### 3.2.3. 1:0.25
+```{r}
+tcell_cds <- cds[, colData(cds)$treatment %in% c("1to0.25")]
+CRISPR_sgRNA_distribution_summary_df_tcell <- colData(tcell_cds) %>%
+  as.data.frame() %>%
+  group_by(gene) %>%
+  dplyr::mutate(CRISPR_count = n()) %>%
+  ungroup() %>%
+  dplyr::mutate(total_CRISPR_count = n()) %>%
+  dplyr::select(gene, CRISPR_count, total_CRISPR_count) %>%
+  distinct() %>%
+  mutate(CRISPR_frequency = (CRISPR_count / total_CRISPR_count) * 100)
+```
+
+```{r}
+CRISPR_sgRNA_proportions <- inner_join(CRISPR_sgRNA_distribution_summary_df_untreated, CRISPR_sgRNA_distribution_summary_df_tcell, by = "gene")
+CRISPR_sgRNA_proportions$relative_proportion <- log(CRISPR_sgRNA_proportions$CRISPR_frequency.x / CRISPR_sgRNA_proportions$CRISPR_frequency.y) %>% scale()
+CRISPR_rank <- CRISPR_sgRNA_proportions %>%
+  arrange(relative_proportion) %>%
+  pull(gene)
+```
+
+```{r fig.width=6}
+ggplot(CRISPR_sgRNA_proportions, aes(x = factor(gene, levels = CRISPR_rank), y = relative_proportion, label = gene, color = abs(relative_proportion) > 2)) +
+  geom_point(size = 1, stroke = 0) +
+  ggrepel::geom_label_repel(
+    data = subset(CRISPR_sgRNA_proportions, abs(relative_proportion) > 2),
+    size = 1,
+    segment.size = 0.1,
+    label.size = 0.1,
+    box.padding = 0,
+    label.padding = 0.1,
+    color = "black"
+  ) +
+  monocle3:::monocle_theme_opts() +
+  scale_color_manual(values = c("TRUE" = "firebrick3", "FALSE" = "black")) +
+  theme(
+    text = element_text(size = 6),
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    legend.position = "none"
+  ) +
+  ylab("Proportion relative to\n T cell treatment") +
+  xlab("Perturbation")
+ggsave(file.path(output_path, "/QC_plots/gRNA_distribution_relative_to_1t0.25.png"), height = 2, width = 2.5, dpi = 300)
+```
+
+```{r}
+saveRDS(CRISPR_sgRNA_proportions, file = file.path(output_path, "/QC_plots/gRNA_distribution_relative_to_1t0.25.rds"))
+```
+
+## 3.3. sgRNA counts
+```{r}
+df <- data.frame(colData(cds))
+category_counts <- table(df$sgRNA)
+df <- data.frame(category = names(category_counts), count = as.numeric(category_counts))
+ggplot(df, aes(x = category, y = count)) +
+  geom_bar(stat = "identity", fill = "skyblue") +
+  labs(x = "Categories", y = "Count", title = "Histogram of Categories") +
+  theme_minimal()
+```
+
+```{r}
+df <- data.frame(colData(cds))
+category_counts <- table(df$gene)
+df <- data.frame(category = names(category_counts), count = as.numeric(category_counts))
+ggplot(df, aes(x = category, y = count)) +
+  geom_bar(stat = "identity", fill = "skyblue") +
+  labs(x = "Categories", y = "Count", title = "Histogram of Categories") +
+  theme_minimal()
+```
+
+```{r}
+sorted_df <- df %>%
+  arrange(dplyr::desc(count))
+head(sorted_df)
+```
+
+```{r}
+# Filter out NTC and random
+sorted_df <- sorted_df[sorted_df$count <= 1000, ]
+ggplot(sorted_df, aes(x = category, y = count)) +
+  geom_bar(stat = "identity", fill = "skyblue") +
+  labs(x = "Categories", y = "Count", title = "Histogram of Categories") +
+  theme_minimal()
+```
+
+```{r}
+ggplot(sorted_df, aes(x = count)) +
+  geom_histogram(binwidth = 1, fill = "gray60", color = "black") +
+  geom_vline(xintercept = mean(sorted_df$count), linetype = "dashed", color = "red") + # Added line for mean
+  labs(
+    title = "Histogram of sgRNA.sequence counts",
+    x = "Count", y = "Frequency"
+  ) +
+  theme_minimal() 
+ggsave(file.path(output_path, "/QC_plots/sgRNA_sequence_counts_histogram.png"),
+width = 6, height = 4, dpi = 300)
+```
+
+### 3.4 Treatment counts
+```{r}
+category_counts <- table(colData(hash_cds)$treatment)
+df <- data.frame(category = names(category_counts), count = as.numeric(category_counts))
+ggplot(df, aes(x = category, y = count)) +
+  geom_bar(stat = "identity", fill = "skyblue") +
+  labs(x = "Categories", y = "Count", title = "Histogram of Categories") +
+  theme_minimal()
+ggsave(file.path(output_path, "/QC_plots/sgRNA_sequence_counts_histogram_hash.png"), width = 6, height = 4, dpi = 300)
+```
+
+```{r}
+median(colData(cds)[colData(cds)$n.umi >= 500, ]$n.umi) # 2681
+```
+
+```{r}
+# Create more columns for input
+colData(cds)$cell <- row.names(colData(cds))
+colData(cds)$RT_lig <- substr(colData(cds)$cell, 9, nchar(colData(cds)$cell))
+```
+
+# 4. Evaluate sgRNA efficiency
+## 4.1. Generate size factor and gene statistics
+```{r}
+# Number of guides?
+length(unique(colData(cds)$gene)) # 524
+```
+
+```{r}
+cds <- detect_genes(cds)
+
+rowData(cds) %>%
+  as.data.frame() %>%
+  filter(gene_short_name %in% unique(colData(cds)$gene)) %>%
+  arrange(num_cells_expressed) %>%
+  head(n = 150)
+```
+
+```{r}
+colData(cds)
+```
+
+```{r}
+colData(cds) %>%
+  as.data.frame() %>%
+  filter(!is.na(gene)) %>%
+  group_by(gene) %>%
+  dplyr::summarise(n = n()) %>%
+  dplyr::select(n) %>%
+  pull() %>%
+  median() # 350
+```
+
+```{r}
+unique(colData(cds)$gene)
+```
+
+```{r}
+cds <- estimate_size_factors(cds)
+```
+
+## 4.2. Filter for Untreated and NTC
+```{r}
+Untreated_cds <- cds[, colData(cds)$treatment %in% c("Untreated")]
+filtered_cds <- subset(Untreated_cds, rowData(Untreated_cds)$gene_short_name %in% targets)
+NTC_filtered_cds <- filtered_cds[, filtered_cds$gene %in% c("NTC")]
+NTC_filtered_cds
+```
+
+```{r}
+# Get NTC gene expression
+gene_matrix <- exprs(NTC_filtered_cds)
+rownames(gene_matrix) <- rowData(NTC_filtered_cds)$gene_short_name
+head(rowMeans(gene_matrix))
+```
+
+## 4.3. Calculate mean knockdown
+```{r}
+colData(Untreated_cds)$gene_id <- colData(Untreated_cds)$gene
+colData(Untreated_cds)$cell <- colData(Untreated_cds)$cell_ID
+```
+
+```{r}
+mean_expres <- calculate_mean_target_knockdown(Untreated_cds, targets, protein_to_gene_map)
+qc_path <- file.path(output_folder, "QC_plots/")
+saveRDS(mean_expres, file.path(qc_path, "mean_target_knockdown.rds"))
+```
+
+```{r}
+median(na.omit(mean_expres$mean_knockdown)) # 0.537
+```
+```{r}
+median(na.omit(mean_expres$mean_random_knockdown)) # 0.905
+```
+```{r}
+median(na.omit(mean_expres$mean_knockdown_10_cutoff)) # 0.464
+```
+```{r}
+median(na.omit(mean_expres$mean_random_knockdown_10_cutoff)) # 0.914
+```
+
+```{r}
+median(na.omit(mean_expres$mean_knockdown_5_cutoff)) # 0.499
+```
+```{r}
+median(na.omit(mean_expres$mean_random_knockdown_5_cutoff)) # 0.876
+```
+
+```{r}
+median(na.omit(mean_expres$mean_knockdown)) / median(na.omit(mean_expres$mean_random_knockdown)) # 0.593
+```
+
+```{r}
+median(na.omit(mean_expres$mean_knockdown_10_cutoff)) / median(na.omit(mean_expres$mean_random_knockdown_10_cutoff)) # 0.507
+```
+
+```{r}
+mean_expres_long <- mean_expres %>%
+  pivot_longer(
+    cols = starts_with("mean"), # Specify the columns to combine
+    names_to = "mean_knockdown", # Name of the new column for labels
+    values_to = "Value" # Name of the new column for combined data
+  )
+mean_expres_long$realorrandom <- "real"
+mean_expres_long <- mean_expres_long %>%
+  mutate(realorrandom = ifelse(grepl("mean_random", mean_knockdown), "random", realorrandom))
+```
+
+```{r}
+mean_expres_long <- mean_expres_long %>%
+  mutate(mean_knockdown = ifelse(grepl("2_cutoff", mean_knockdown), "2_cutoff", mean_knockdown))
+
+mean_expres_long <- mean_expres_long %>%
+  mutate(mean_knockdown = ifelse(grepl("5_cutoff", mean_knockdown), "5_cutoff", mean_knockdown))
+
+mean_expres_long <- mean_expres_long %>%
+  mutate(mean_knockdown = ifelse(grepl("0.2gpro", mean_knockdown), "0.2gpro_10_cutff", mean_knockdown))
+
+mean_expres_long <- mean_expres_long %>%
+  mutate(mean_knockdown = ifelse(grepl("10_cutoff", mean_knockdown), "10_cutoff", mean_knockdown))
+
+mean_expres_long <- mean_expres_long %>%
+  mutate(mean_knockdown = ifelse(grepl("random", mean_knockdown), "0_cutoff", mean_knockdown))
+
+mean_expres_long <- mean_expres_long %>%
+  mutate(mean_knockdown = ifelse(grepl("mean", mean_knockdown), "0_cutoff", mean_knockdown))
+```
+
+```{r}
+mean_expres_long$realorrandom <- factor(mean_expres_long$realorrandom, levels = c("real", "random"))
+mean_expres_long$mean_knockdown <- factor(mean_expres_long$mean_knockdown, levels = c("0.2gpro_10_cutff", "10_cutoff", "5_cutoff", "2_cutoff", "0_cutoff"))
+```
+
+```{r}
+ggplot(
+  mean_expres_long %>% filter(!is.na(Value)),
+  aes(x = realorrandom, y = Value)
+) +
+  geom_bar(stat = "summary", fun = "median", position = "dodge", color = "black", size = 0.1) +
+  facet_wrap(~mean_knockdown, scales = "fixed", ncol = 3) + # Change scales to "fixed"
+  monocle3:::monocle_theme_opts() +
+  theme(text = element_text(size = 6)) +
+  ylab("Median knockdown level\nacross perturbations") +
+  xlab("sgRNA assignment")
+ggsave(file.path(qc_path, "Median_knockdown_levels_by_cutoff_Figure.png"), width = 2.5, height = 2, dpi = 600)
+```
+
+```{r}
+mean_exprs_cut_off <- mean_expres_long[mean_expres_long$mean_knockdown == "5_cutoff", ]
+ggplot(
+  mean_exprs_cut_off %>% filter(!is.na(Value)),
+  aes(x = realorrandom, y = Value)
+) +
+  geom_bar(stat = "summary", fun = "median", position = "dodge", color = "black", size = 0.1) +
+  # facet_wrap(~mean_knockdown, scales = "fixed", ncol = 3) +  # Change scales to "fixed"
+  monocle3:::monocle_theme_opts() +
+  theme(text = element_text(size = 6)) +
+  ylab("Median knockdown level \nacross perturbations") +
+  xlab("sgRNA assignment") # Set the y-axis limits
+ggsave(file.path(qc_path, "Median_knockdown_levels_by_0.3g_5_cutoff_Figure.png"), width = 2.5, height = 2, dpi = 600)
+```
+
+# 5. Save the CDS
+```{r}
+saveRDS(cds, file.path(base_dir, "/11-final-output/CDS_crop_hash_FINAL_CRISPR_GBM_T_cells_500_cutoff_after_qc.rds"))
+```
