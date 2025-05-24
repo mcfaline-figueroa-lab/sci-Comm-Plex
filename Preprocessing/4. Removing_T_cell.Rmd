@@ -36,9 +36,10 @@ cc.genes <- readRDS("/burg/iicd/users/qc2358/Kinase_project/github_repos/sci-ple
 ```
 
 ```{r}
-output_folder <- "CRISPRI_Figures"
 base_dir <- "/burg/iicd/users/qc2358/Kinase_project"
 setwd(base_dir)
+
+output_folder <- "CRISPRI_Figures/Tcell_removal"
 
 cds_folder <- "11-final-output/CDS_crop_hash_FINAL_CRISPR_GBM_T_cells_500_cutoff_after_qc.RDS"
 cds_path <- file.path(base_dir, cds_folder)
@@ -174,7 +175,6 @@ length(unique(colData(cds)$PCA_Cluster)) # 15
 
 ```{r}
 saveRDS(cds, "preprocessed_cds.rds")
-cds <- readRDS("preprocessed_cds.rds")
 ```
 
 ```{r}
@@ -184,13 +184,13 @@ plot <- plot_cells(cds, color_cells_by = "PCA_Cluster") +
     legend.key.width = unit(0.2, "line"),
     legend.key.height = unit(0.2, "line")
   )
-ggsave("CRISPRI_Figures/Clustering/PCA_Cluster_plot.png", plot)
+ggsave(file.path(output_folder, "PCA_Cluster_plot.png"), plot)
 
 plot <- plot_cells(cds,
   genes = c("CD8A", "CD3D"),
   show_trajectory_graph = FALSE
 )
-ggsave("CRISPRI_Figures/Clustering/CD8A_CD3D_plot.png", plot)
+ggsave(file.path(output_folder, "CD8A_CD3D_plot.png"), plot)
 ```
 
 # 5. Filter out T cells
@@ -205,7 +205,7 @@ plot <- plot_cells(cds, color_cells_by = "PCA_Cluster") +
     legend.key.width = unit(0.2, "line"),
     legend.key.height = unit(0.2, "line")
   )
-ggsave("CRISPRI_Figures/Clustering/PCA_Cluster_plot_without_Tcells.png", plot)
+ggsave(file.path(output_folder, "PCA_Cluster_plot_without_Tcells.png"), plot)
 ```
 
 ```{r}

@@ -1,6 +1,7 @@
-# Convert rds to h5ad 
-
+# Convert rds to h5ad
 library(reticulate)
+
+# Need to uninstall Matrix package v1.6-1 and reinstall v1.6-4.
 library(Seurat)
 library(SeuratObject)
 library(SeuratDisk)
@@ -10,7 +11,7 @@ library(monocle3)
 setwd("/burg/iicd/users/qc2358/Kinase_project")
 
 # Change filename
-filename <- "11-final-output/CDS_crop_hash_FINAL_CRISPR_GBM_T_cells_500_cutoff" 
+filename <- "11-final-output/CDS_crop_hash_FINAL_CRISPR_GBM_T_cells_500_cutoff"
 cds.pre <- readRDS(paste0(filename, ".rds"))
 
 # Get rownames of rowData to be gene short names for seurat obj
@@ -26,7 +27,7 @@ for (i in seq_along(unique_gene_short_names)) {
 }
 
 # Generate exprs matrix
-sciNM_gene_short_names <- cds.pre[rowData(cds.pre)$id %in% unique_ids,]
+sciNM_gene_short_names <- cds.pre[rowData(cds.pre)$id %in% unique_ids, ]
 exprs_sciNM_gene_short_names <- exprs(sciNM_gene_short_names)
 rownames(rowData(sciNM_gene_short_names)) <- rowData(sciNM_gene_short_names)$gene_short_name
 rownames(exprs_sciNM_gene_short_names) <- rowData(sciNM_gene_short_names)$gene_short_name

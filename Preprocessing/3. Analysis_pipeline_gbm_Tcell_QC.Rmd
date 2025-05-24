@@ -307,8 +307,8 @@ dim(cds) # 58347 200473
 ```{r}
 # Remove doublets
 doublet_cells <- read.csv("11-final-output/doublet_info.csv")
-doublet_cells <- doublet_cells %>% 
-  filter(is_doublet == "True") %>% 
+doublet_cells <- doublet_cells %>%
+  filter(is_doublet == "True") %>%
   pull(cell_ID)
 cds <- cds[, !colData(cds)$cell_ID %in% doublet_cells]
 dim(cds) # 58347 200436
@@ -623,9 +623,10 @@ ggplot(sorted_df, aes(x = count)) +
     title = "Histogram of sgRNA.sequence counts",
     x = "Count", y = "Frequency"
   ) +
-  theme_minimal() 
+  theme_minimal()
 ggsave(file.path(output_path, "/QC_plots/sgRNA_sequence_counts_histogram.png"),
-width = 6, height = 4, dpi = 300)
+  width = 6, height = 4, dpi = 300
+)
 ```
 
 ### 3.4 Treatment counts

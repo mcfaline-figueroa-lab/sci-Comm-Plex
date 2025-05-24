@@ -41,17 +41,21 @@ cc.genes <- readRDS("/burg/iicd/users/qc2358/Kinase_project/github_repos/sci-ple
 base_dir <- "/burg/iicd/users/qc2358/Kinase_project"
 setwd(base_dir)
 
+output_dir <- "CRISPRI_Figures/NTC_analysis"
+
 cds_folder <- "preprocessed_cds_without_Tcells.rds"
-cds_path <- file.path(base_dir,cds_folder)
+cds_path <- file.path(base_dir, cds_folder)
 cds <- readRDS(cds_path)
 
-cds<- cds[,!is.na(colData(cds)$top_sg)]
+cds <- cds[, !is.na(colData(cds)$top_sg)]
 dim(cds) # 58347 166061
 ```
 
 ```{r}
-ggplot(colData(cds) %>% as.data.frame() %>% arrange(dplyr::desc(n.umi)) %>% dplyr::mutate(rank = row_number()),
-       aes(x = log10(rank), y = log10(n.umi))) +
+ggplot(
+  colData(cds) %>% as.data.frame() %>% arrange(dplyr::desc(n.umi)) %>% dplyr::mutate(rank = row_number()),
+  aes(x = log10(rank), y = log10(n.umi))
+) +
   geom_point() +
   geom_hline(yintercept = log10(500)) +
   monocle3:::monocle_theme_opts()
@@ -60,22 +64,23 @@ ggsave("CRISPRI_Figures/QC_plots/UMIs_per_cell.png", dpi = 600, width = 5, heigh
 
 ```{r}
 cds <- estimate_size_factors(cds)
-cds <- estimate_cell_cycle(cds, 
-  g1s_markers = cc.genes$s.genes, 
-  g2m_markers = cc.genes$g2m.genes)
+cds <- estimate_cell_cycle(cds,
+  g1s_markers = cc.genes$s.genes,
+  g2m_markers = cc.genes$g2m.genes
+)
 ```
 
 ```{r}
-cds <- cds[,!is.na(colData(cds)$treatment)]
-cds = cds[,!is.na(colData(cds)$gene_id)]
+cds <- cds[, !is.na(colData(cds)$treatment)]
+cds <- cds[, !is.na(colData(cds)$gene_id)]
 ```
 
 ```{r}
 # Filter NTC cells
-NTC_cds <- cds[,colData(cds)$gene_id == "NTC"]
-NTC_cds <- NTC_cds[,!is.na(colData(NTC_cds)$dose)]
+NTC_cds <- cds[, colData(cds)$gene_id == "NTC"]
+NTC_cds <- NTC_cds[, !is.na(colData(NTC_cds)$dose)]
 NTC_cds <- estimate_size_factors(NTC_cds)
-NTC_cds # 58347 3062 
+NTC_cds # 58347 3062
 ```
 
 ```{r}
@@ -110,17 +115,18 @@ ggplot(df, aes(x = category, y = count)) +
 ## 2.1 Test for dose-response + replicate
 ```{r}
 # Highly expressed genes
-expressed_genes <- row.names(fData(NTC_cds)[Matrix::rowSums(exprs(NTC_cds) > 0) > dim(NTC_cds)[2]*0.05,])
+expressed_genes <- row.names(fData(NTC_cds)[Matrix::rowSums(exprs(NTC_cds) > 0) > dim(NTC_cds)[2] * 0.05, ])
 ```
 
 ```{r}
-Tcell_dose_response_diff_test <- fit_models(NTC_cds[expressed_genes,],
-model_formula_str = "~dose+ replicate", cores = 1)
-Tcell_dose_response_diff_test <- coefficient_table(Tcell_dose_response_diff_test) %>% dplyr::select(-model,-model_summary)
+Tcell_dose_response_diff_test <- fit_models(NTC_cds[expressed_genes, ],
+  model_formula_str = "~dose+ replicate", cores = 1
+)
+Tcell_dose_response_diff_test <- coefficient_table(Tcell_dose_response_diff_test) %>% dplyr::select(-model, -model_summary)
 ```
 
 ```{r}
-saveRDS(Tcell_dose_response_diff_test, "Figure1/DEG_testing/NTC_CRISPRI_dose_response_diff_test_20250520_replicates_ori.rds")
+saveRDS(Tcell_dose_response_diff_test, file.path(output_dir, "DEG_testing/NTC_CRISPRI_dose_response_diff_test_20250520_replicates_ori.rds"))
 ```
 
 ```{r}
@@ -132,24 +138,30 @@ Tcell_dose_response_diff_test <- Tcell_dose_response_diff_test %>%
 
 ## 2.2 Volcano plot
 ```{r}
-Tcell_dose_response_diff_test %>%  
+Tcell_dose_response_diff_test %>%
   filter(grepl("dose", term)) %>%
   ggplot() +
-  geom_point(aes(x = normalized_effect,
-                 y = -log(q_value),
-                 color = q_value < 0.01 & abs(normalized_effect) > 0.1),
-             size = 0.4, stroke = 0) +
+  geom_point(
+    aes(
+      x = normalized_effect,
+      y = -log(q_value),
+      color = q_value < 0.01 & abs(normalized_effect) > 0.1
+    ),
+    size = 0.4, stroke = 0
+  ) +
   monocle3:::monocle_theme_opts() +
-  geom_hline(yintercept = -log(0.01), color = "black", linetype = "dotted",size = 0.1) +
-  theme(text = element_text(size = 6),
-        legend.key.width = unit(0.2,"line"),
-        legend.key.height = unit(0.2,"line")) +
+  geom_hline(yintercept = -log(0.01), color = "black", linetype = "dotted", size = 0.1) +
+  theme(
+    text = element_text(size = 6),
+    legend.key.width = unit(0.2, "line"),
+    legend.key.height = unit(0.2, "line")
+  ) +
   xlab("Effect size") +
   ylab("-log(p adj)") +
   scale_color_manual("Pass\nFilter\n(FDR < 1% &\n|Beta| > 0.1)", values = c("TRUE" = "red", "FALSE" = "black")) +
-  guides(guides(colour = guide_legend(override.aes = list(size=2))))
+  guides(guides(colour = guide_legend(override.aes = list(size = 2))))
 
-ggsave("Figure1/DEG_testing/Effect_size_distribution_NTC_Tcell_dose_response_diff_test_Supplementary_Figure_run2_no_gene_label.png", dpi = 600, width = 2, height = 1.25)
+ggsave(file.path(output_dir, "DEG_testing/Effect_size_distribution_NTC_Tcell_dose_response_diff_test_Supplementary_Figure_run2_no_gene_label.png"), dpi = 600, width = 2, height = 1.25)
 ```
 
 ```{r}
@@ -163,28 +175,34 @@ high_value_points <- volcano_data %>%
 # Create the volcano plot with labels
 p <- volcano_data %>%
   ggplot() +
-  geom_point(aes(x = normalized_effect,
-                 y = -log10(q_value),
-                 color = q_value < 0.01 & abs(normalized_effect) > 0.1),
-             size = 0.4, stroke = 0) +
+  geom_point(
+    aes(
+      x = normalized_effect,
+      y = -log10(q_value),
+      color = q_value < 0.01 & abs(normalized_effect) > 0.1
+    ),
+    size = 0.4, stroke = 0
+  ) +
   monocle3:::monocle_theme_opts() +
   geom_hline(yintercept = -log10(0.01), color = "black", linetype = "dotted", size = 0.1) +
-  theme(text = element_text(size = 6),
-        legend.key.width = unit(0.2, "line"),
-        legend.key.height = unit(0.2, "line")) +
+  theme(
+    text = element_text(size = 6),
+    legend.key.width = unit(0.2, "line"),
+    legend.key.height = unit(0.2, "line")
+  ) +
   xlab("Effect size") +
   ylab("-log10(p adj)") +
   scale_color_manual("Pass\nFilter\n(FDR < 1% &\n|Beta| > 0.1)", values = c("TRUE" = "red", "FALSE" = "black")) +
   guides(colour = guide_legend(override.aes = list(size = 2))) +
-  geom_text_repel(data = high_value_points,
-                  aes(x = normalized_effect, y = -log10(q_value), label = gene_short_name), # Replace `gene_name` with the column containing gene names
-                  size = 0.8, # Adjust the size of the labels
-                  max.overlaps = 50,
-                  segment.size = 0.1) # Adjust the number of overlaps allowed
+  geom_text_repel(
+    data = high_value_points,
+    aes(x = normalized_effect, y = -log10(q_value), label = gene_short_name), # Replace `gene_name` with the column containing gene names
+    size = 0.8, # Adjust the size of the labels
+    max.overlaps = 50,
+    segment.size = 0.1
+  ) # Adjust the number of overlaps allowed
 
-ggsave("Figure1/DEG_testing/Effect_size_distribution_NTC_Tcell_dose_response_diff_test_Supplementary_Figure_run2_top_gene_label.png",
-       plot = p, dpi = 600, width = 2, height = 1.25)
-
+ggsave(file.path(output_dir, "DEG_testing/Effect_size_distribution_NTC_Tcell_dose_response_diff_test_Supplementary_Figure_run2_top_gene_label.png"), plot = p, dpi = 600, width = 2, height = 1.25)
 ```
 
 ```{r}
@@ -194,44 +212,51 @@ volcano_data <- Tcell_dose_response_diff_test %>%
 # Identify high-value points for labeling
 high_value_points <- volcano_data %>%
   filter(q_value < 0.01 & abs(normalized_effect) > 1) # Adjust the thresholds as needed
-write.csv(high_value_points, "Figure1/DEG_testing/high_value_points.csv", row.names = FALSE)
+write.csv(high_value_points, file.path(output_dir, "high_value_points.csv"), row.names = FALSE)
 
 # Randomly sample a portion of high-value points for labeling
-set.seed(123)  # Set seed for reproducibility
+set.seed(123) # Set seed for reproducibility
 sampled_high_value_points <- high_value_points %>%
-  sample_n(size = 20)  # Adjust the sample size as needed
+  sample_n(size = 20) # Adjust the sample size as needed
 
 # Create the volcano plot with labels
 p <- volcano_data %>%
   ggplot() +
-  geom_point(aes(x = normalized_effect,
-                 y = -log10(q_value),
-                 color = q_value < 0.01 & abs(normalized_effect) > 0.1),
-             size = 0.4, stroke = 0) +
+  geom_point(
+    aes(
+      x = normalized_effect,
+      y = -log10(q_value),
+      color = q_value < 0.01 & abs(normalized_effect) > 0.1
+    ),
+    size = 0.4, stroke = 0
+  ) +
   monocle3:::monocle_theme_opts() +
   geom_hline(yintercept = -log10(0.01), color = "black", linetype = "dotted", size = 0.1) +
-  theme(text = element_text(size = 6),
-        legend.key.width = unit(0.2, "line"),
-        legend.key.height = unit(0.2, "line")) +
+  theme(
+    text = element_text(size = 6),
+    legend.key.width = unit(0.2, "line"),
+    legend.key.height = unit(0.2, "line")
+  ) +
   xlab("Effect size") +
   ylab("-log10(p adj)") +
   scale_color_manual("Pass\nFilter\n(FDR < 1% &\n|Beta| > 0.1)", values = c("TRUE" = "red", "FALSE" = "black")) +
   guides(colour = guide_legend(override.aes = list(size = 2))) +
-  geom_text_repel(data = sampled_high_value_points,
-                  aes(x = normalized_effect, y = -log10(q_value), label = gene_short_name), # Replace `gene_short_name` with the column containing gene names
-                  size = 0.8, # Adjust the size of the labels
-                  max.overlaps = 50,
-                  segment.size = 0.1) # Adjust the number of overlaps allowed
+  geom_text_repel(
+    data = sampled_high_value_points,
+    aes(x = normalized_effect, y = -log10(q_value), label = gene_short_name), # Replace `gene_short_name` with the column containing gene names
+    size = 0.8, # Adjust the size of the labels
+    max.overlaps = 50,
+    segment.size = 0.1
+  ) # Adjust the number of overlaps allowed
 
 # Save the plot
-ggsave("Figure1/DEG_testing/Effect_size_distribution_NTC_Tcell_dose_response_diff_test_Supplementary_Figure_run2_random_sig_label.png",
-       plot = p, dpi = 600, width = 2, height = 1.25)
+ggsave(file.path(output_dir, "DEG_testing/Effect_size_distribution_NTC_Tcell_dose_response_diff_test_Supplementary_Figure_run2_random_sig_label.png"), plot = p, dpi = 600, width = 2, height = 1.25)
 ```
 
 ## 2.3 GO analysis
 ```{r}
 library(clusterProfiler)
-library(org.Hs.eg.db)  # Substitute with the correct organism package as needed
+library(org.Hs.eg.db) # Substitute with the correct organism package as needed
 library(enrichplot)
 ```
 
@@ -245,9 +270,10 @@ mapped_genes <- bitr(selected_columns$gene_short_name, fromType = "SYMBOL", toTy
 ```
 
 ```{r}
-selected_columns_mapped <- merge(selected_columns, mapped_genes, 
-                                 by.x = "gene_short_name", by.y = "SYMBOL", 
-                                 all.x = TRUE)
+selected_columns_mapped <- merge(selected_columns, mapped_genes,
+  by.x = "gene_short_name", by.y = "SYMBOL",
+  all.x = TRUE
+)
 selected_columns_mapped # 104 3
 ```
 
@@ -280,14 +306,14 @@ dim(go_results@result) # 27 12
 ```{r fig.height=20, fig.width=8}
 library(enrichplot)
 p <- dotplot(go_results, showCategory = 60, split = ".sign") + facet_grid(. ~ .sign)
-ggsave("Figure1/DEG_testing/dotplot_go_results.png", plot = p, width = 6, height = 22, dpi = 300)
-ggsave("Figure1/DEG_testing/dotplot_go_results.pdf", plot = p, width = 6, height = 22, dpi = 300)    
+ggsave(file.path(output_dir, "DEG_testing/dotplot_go_results.png"), plot = p, width = 6, height = 22, dpi = 300)
+ggsave(file.path(output_dir, "DEG_testing/dotplot_go_results.pdf"), plot = p, width = 6, height = 22, dpi = 300)
 ```
 
 ## 2.4 T cell dose-response genes
 ```{r}
 Tcell_dose_response_sig_genes <- Tcell_dose_response_diff_test %>%
-  filter(grepl("dose",term) &  q_value < 0.01 & abs(normalized_effect) > 1) %>%
+  filter(grepl("dose", term) & q_value < 0.01 & abs(normalized_effect) > 1) %>%
   pull(id) %>%
   unique() # 104
 ```
@@ -296,8 +322,9 @@ Tcell_dose_response_sig_genes <- Tcell_dose_response_diff_test %>%
 ```{r}
 # Over-dispersed genes
 dispersions_test <- estimateDispersionsForCellDataSet(NTC_cds,
-                                                      min_cells_detected = 100,
-                                                      removeOutliers = FALSE)
+  min_cells_detected = 100,
+  removeOutliers = FALSE
+)
 
 disp_table <- dispersionTable(dispersions_test)
 
@@ -315,29 +342,32 @@ print(length(unique(unsup_clustering_genes))) # 1000
 ```{r}
 library(Matrix)
 NTC_cds <- preprocess_cds(NTC_cds,
-                          num_dim = 100,
-                          use_genes = unsup_clustering_genes)
+  num_dim = 100,
+  use_genes = unsup_clustering_genes
+)
 
 p <- plot_pc_variance_explained(NTC_cds) +
   theme(text = element_text(size = 6)) +
   geom_vline(xintercept = 15, color = "black", size = 0.1)
-ggsave("Figure1/Clustering/PC_variance_explained.png", plot = p, dpi = 900, width = 4, height = 3)
+ggsave(file.path(output_dir, "Clustering/PC_variance_explained.png"), plot = p, dpi = 900, width = 4, height = 3)
 ```
 
 ```{r}
 NTC_cds <- preprocess_cds(NTC_cds,
-                          num_dim = 15,
-                          use_genes = unsup_clustering_genes)
+  num_dim = 15,
+  use_genes = unsup_clustering_genes
+)
 
-NTC_cds <- reduce_dimension(NTC_cds, 
-                            umap.n_neighbors = 20L, 
-                            umap.min_dist = 0.1, 
-                            max_components = 2,
-                            umap.fast_sgd = FALSE,
-                            cores = 1)
+NTC_cds <- reduce_dimension(NTC_cds,
+  umap.n_neighbors = 20L,
+  umap.min_dist = 0.1,
+  max_components = 2,
+  umap.fast_sgd = FALSE,
+  cores = 1
+)
 
-colData(NTC_cds)$UMAP1 <- reducedDims(NTC_cds)[["UMAP"]][,1]
-colData(NTC_cds)$UMAP2 <- reducedDims(NTC_cds)[["UMAP"]][,2]
+colData(NTC_cds)$UMAP1 <- reducedDims(NTC_cds)[["UMAP"]][, 1]
+colData(NTC_cds)$UMAP2 <- reducedDims(NTC_cds)[["UMAP"]][, 2]
 ```
 
 ```{r}
@@ -349,49 +379,57 @@ length(unique(colData(NTC_cds)$PCA_Cluster)) # 4
 ```{r}
 plot_cells(NTC_cds, color_cells_by = "PCA_Cluster") +
   theme_void() +
-theme(legend.position = "right",
-      legend.key.width = unit(0.2,"line"),
-      legend.key.height = unit(0.2,"line"))
-ggsave("Figure1/Clustering/PCA_response_UMAP.png", dpi = 900, height = 2.25, width = 3)
+  theme(
+    legend.position = "right",
+    legend.key.width = unit(0.2, "line"),
+    legend.key.height = unit(0.2, "line")
+  )
+ggsave(file.path(output_dir, "Clustering/PCA_response_UMAP.png"), dpi = 900, height = 2.25, width = 3)
 ```
 
 
 ```{r}
 plot_cells(NTC_cds, color_cells_by = "dose") +
-theme(legend.position = "right",
-      legend.key.width = unit(0.2, "line"),
-      legend.key.height = unit(0.4, "line"))
+  theme(
+    legend.position = "right",
+    legend.key.width = unit(0.2, "line"),
+    legend.key.height = unit(0.4, "line")
+  )
 ```
 
 ```{r}
 colData(NTC_cds)$dosage <- as.character(colData(NTC_cds)$dose)
-dosage_colors<- c('0' = '#A6CEE3','0.25'='#1F78B4','0.5'='#B2DF8A','1' = '#33A02C')
+dosage_colors <- c("0" = "#023047", "0.25" = "#219EBC", "0.5" = "#FFD166", "1" = "#FF7F11")
 plot_cells(NTC_cds, color_cells_by = "dosage") +
-  scale_color_manual(values = dosage_colors)+
+  scale_color_manual(values = dosage_colors) +
   theme_void() +
-  theme(legend.position = "right",
-        legend.key.width = unit(0.2,"line"),
-        legend.key.height = unit(0.2,"line"))
-ggsave("Figure1/Clustering/PCA_response_UMAP_dosage.png", dpi = 900, height = 2.25, width = 3)
+  theme(
+    legend.position = "right",
+    legend.key.width = unit(0.2, "line"),
+    legend.key.height = unit(0.2, "line")
+  )
+ggsave(file.path(output_dir, "Clustering/PCA_response_UMAP_dosage.png"), dpi = 900, height = 2.25, width = 3)
 ```
 
 ```{r}
-ggplot(colData(NTC_cds) %>% as.data.frame(), aes(x = as.character(PCA_Cluster), fill =dosage)) +
+ggplot(colData(NTC_cds) %>% as.data.frame(), aes(x = as.character(PCA_Cluster), fill = dosage)) +
   geom_bar(position = "fill", color = "black", size = 0.25) +
   monocle3:::monocle_theme_opts() +
-  theme(text = element_text(size = 6),
-        axis.text.x = element_text(angle = 45, hjust = 1),
-        legend.key.width = unit(0.4,"line"),
-        legend.key.height = unit(0.4,"line")) +
-  guides(guides(colour = guide_legend(override.aes = list(size=3)))) +
+  theme(
+    text = element_text(size = 6),
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    legend.key.width = unit(0.4, "line"),
+    legend.key.height = unit(0.4, "line")
+  ) +
+  guides(guides(colour = guide_legend(override.aes = list(size = 3)))) +
   xlab("PCA cluster") +
   scale_fill_discrete("T-cell \n to GBM ratio")
-ggsave("Figure1/Clustering/GBM_cluster_distribution_by_sample_GBM_cells.png", dpi = 600, width = 2, height = 1)
+ggsave(file.path(output_dir, "Clustering/GBM_cluster_distribution_by_sample_GBM_cells.png"), dpi = 600, width = 2, height = 1)
 ```
 
 ```{r}
-cds_exprs <- exprs(NTC_cds)[Matrix::rowSums(exprs(NTC_cds)) > 0,]
-cds_exprs <- Matrix::t(Matrix::t(cds_exprs)/colData(NTC_cds)$Size_Factor)
+cds_exprs <- exprs(NTC_cds)[Matrix::rowSums(exprs(NTC_cds)) > 0, ]
+cds_exprs <- Matrix::t(Matrix::t(cds_exprs) / colData(NTC_cds)$Size_Factor)
 cds_exprs_scaled <- log(cds_exprs + 1)
 cds_exprs_scaled <- scale(Matrix::t(scale(Matrix::t(cds_exprs_scaled))))
 
@@ -400,50 +438,97 @@ cds_exprs_scaled[cds_exprs_scaled < -2] <- -2
 cds_exprs_scaled[is.na(cds_exprs_scaled)] <- 0
 
 set.seed(2016L)
-sampled_GBM_cells <- colData(NTC_cds) %>% 
+sampled_GBM_cells <- colData(NTC_cds) %>%
   as.data.frame() %>%
   group_by(dosage) %>%
   sample_n(500, replace = FALSE) %>%
-  pull(cell_ID) %>% 
+  pull(cell_ID) %>%
   unique()
 paletteLength <- 35
-hmcols <- colorRampPalette(c("navy","white","firebrick2"))(paletteLength)
-dosage_colors<- c('0' = '#A6CEE3','0.25'='#1F78B4','0.5'='#B2DF8A','1' = '#33A02C')
+hmcols <- colorRampPalette(c("navy", "white", "firebrick2"))(paletteLength)
+dosage_colors <- c("0" = "#023047", "0.25" = "#219EBC", "0.5" = "#FFD166", "1" = "#FF7F11")
 
-ph <- pheatmap::pheatmap(cds_exprs_scaled[Tcell_dose_response_sig_genes,sampled_GBM_cells],
+ph <- pheatmap::pheatmap(cds_exprs_scaled[Tcell_dose_response_sig_genes, sampled_GBM_cells],
   clustering_method = "ward.D2",
   show_rownames = FALSE,
   show_colnames = FALSE,
-  annotation_col = data.frame(row.names = row.names(colData(NTC_cds)),
-                              Ratio = colData(NTC_cds)$dosage),
+  annotation_col = data.frame(
+    row.names = row.names(colData(NTC_cds)),
+    Ratio = colData(NTC_cds)$dosage
+  ),
   annotation_colors = list("Ratio" = dosage_colors),
   color = hmcols,
   cutree_rows = 3,
   cutree_cols = 3,
-  height = 3, 
+  height = 3,
   width = 5,
-  file = "Figure1/Clustering/Tcell_dependent_GBM_degs_k3.png")
+  file = file.path(output_dir, "Clustering/Tcell_dependent_GBM_degs_k3.png")
+)
 
-ph_cutree <- cutree(ph$tree_row, 4)
-
-ann_colors <- list("Gene_cluster" = c("1" = "#FDBF6F","2" = "#1F78B4","3" = "#FB9A99","4" = "#33A02C"), "Tcell_dose" = dosage_colors)
-
-pheatmap::pheatmap(cds_exprs_scaled[Tcell_dose_response_sig_genes,sampled_GBM_cells],
+ph <- pheatmap::pheatmap(cds_exprs_scaled[Tcell_dose_response_sig_genes, sampled_GBM_cells],
   clustering_method = "ward.D2",
   show_rownames = FALSE,
   show_colnames = FALSE,
-  annotation_col = data.frame(row.names = row.names(colData(NTC_cds)),
-                              Tcell_dose = colData(NTC_cds)$dosage),
-  annotation_row = data.frame(row.names = Tcell_dose_response_sig_genes,
-                              Gene_cluster = factor(ph_cutree)),
+  annotation_col = data.frame(
+    row.names = row.names(colData(NTC_cds)),
+    Ratio = colData(NTC_cds)$dosage
+  ),
+  annotation_colors = list("Ratio" = dosage_colors),
+  color = hmcols,
+  cutree_rows = 3,
+  cutree_cols = 3,
+  height = 3,
+  width = 5,
+  file = file.path(output_dir, "Clustering/Tcell_dependent_GBM_degs_k3.png")
+)
+
+ph_cutree <- cutree(ph$tree_row, 4)
+
+ann_colors <- list("Gene_cluster" = c("1" = "#FDBF6F", "2" = "#1F78B4", "3" = "#FB9A99", "4" = "#33A02C"), "Tcell_dose" = dosage_colors)
+
+pheatmap::pheatmap(cds_exprs_scaled[Tcell_dose_response_sig_genes, sampled_GBM_cells],
+  clustering_method = "ward.D2",
+  show_rownames = FALSE,
+  show_colnames = FALSE,
+  annotation_col = data.frame(
+    row.names = row.names(colData(NTC_cds)),
+    Tcell_dose = colData(NTC_cds)$dosage
+  ),
+  annotation_row = data.frame(
+    row.names = Tcell_dose_response_sig_genes,
+    Gene_cluster = factor(ph_cutree)
+  ),
   annotation_colors = ann_colors,
   color = hmcols,
   cutree_rows = 4,
   cutree_cols = 4,
   # treeheight_row = 10,
   # treeheight_col = 10,
-  # height = 2, 
-  # width = 2,
-  # fontsize = 2,
-  file = "Figure1/Clustering/Tcell_dependent_GBM_degs_k4.png")
+  height = 6,
+  width = 8,
+  file = file.path(output_dir, "Clustering/Tcell_dependent_GBM_degs_k4.png")
+)
+
+pheatmap::pheatmap(cds_exprs_scaled[Tcell_dose_response_sig_genes, sampled_GBM_cells],
+  clustering_method = "ward.D2",
+  show_rownames = FALSE,
+  show_colnames = FALSE,
+  annotation_col = data.frame(
+    row.names = row.names(colData(NTC_cds)),
+    Tcell_dose = colData(NTC_cds)$dosage
+  ),
+  annotation_row = data.frame(
+    row.names = Tcell_dose_response_sig_genes,
+    Gene_cluster = factor(ph_cutree)
+  ),
+  annotation_colors = ann_colors,
+  color = hmcols,
+  cutree_rows = 4,
+  cutree_cols = 4,
+  # treeheight_row = 10,
+  # treeheight_col = 10,
+  height = 6,
+  width = 8,
+  file = file.path(output_dir, "Clustering/Tcell_dependent_GBM_degs_k4.pdf")
+)
 ```
