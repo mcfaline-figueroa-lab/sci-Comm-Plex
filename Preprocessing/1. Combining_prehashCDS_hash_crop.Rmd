@@ -282,22 +282,22 @@ head(cropTable_summary)
 ```
 
 ```{r}
-ggplot(cropTable_summary, aes(x = log10(total_sgrna_read_per_cell))) +
+plot <- ggplot(cropTable_summary, aes(x = log10(total_sgrna_read_per_cell))) +
   geom_histogram() +
   monocle3:::monocle_theme_opts()
 ggsave(
-  filename = file.path(output_path, "QC_plots/crop_table_summary_total_sgrna_read_per_cell_histogram.png"),
+  filename = file.path(output_path, "QC_plots/cropTable_summary_total_sgrna_read_per_cell.png"),
   plot = plot,
   width = 2,
   height = 1.5,
   dpi = 300
 )
 
-ggplot(cropTable_summary, aes(x = log10(top_to_second))) +
+plot <- ggplot(cropTable_summary, aes(x = log10(top_to_second))) +
   geom_histogram() +
   monocle3:::monocle_theme_opts()
 ggsave(
-  filename = file.path(output_path, "QC_plots/crop_table_summary_top_to_second_histogram.png"),
+  filename = file.path(output_path, "QC_plots/cropTable_summary_top_to_second.png"),
   plot = plot,
   width = 2,
   height = 1.5,

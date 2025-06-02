@@ -69,7 +69,7 @@ cds <- cds[, !is.na(colData(cds)$top_sg)]
 dim(cds) # 58347 166061
 ```
 
-# 2. UMAP Visualization
+# 1. UMAP Visualization
 ```{r}
 expressed_genes <- row.names(fData(cds)[Matrix::rowSums(exprs(cds) > 0) > 500, ])
 
@@ -165,12 +165,52 @@ ggsave(file.path(output_path, "UMAPs/UMAP_SOD2_CSF3.pdf"), width = 4, height = 4
 ```
 
 ```{r}
+# Ephrin genes
+Ephrin_RTK_genes <- c("EPHB1", "EPHB2", "EPHB3", "EPHB4", "EPHB5", "EPHB6", "EPHA1", "EPHA2", "EPHA3", "EPHA4", "EPHA5", "EPHA6", "EPHA7", "EPHA8")
+
+plot_cells(cds,
+  genes = Ephrin_RTK_genes,
+  show_trajectory_graph = FALSE
+) +
+  viridis::scale_color_viridis(option = "magma") +
+  theme(
+    legend.position = "right",
+    legend.key.width = unit(0.4, "line"),
+    legend.key.height = unit(1, "line")
+  )
+
+ggsave(file.path(output_path, "UMAPs/UMAP_Ephrin_RTK.png"), width = 8, height = 8, dpi = 300)
+```
+
+```{r}
+Ephrin_genes <- c("EFNA1", "EFNA2", "EFNA3", "EFNA4", "EFNA5", "EFNA6", "EFNB1", "EFNB2", "EFNB3")
+
+plot_cells(cds,
+  genes = Ephrin_genes,
+  show_trajectory_graph = FALSE
+) +
+  viridis::scale_color_viridis(option = "magma") +
+  theme(
+    legend.position = "right",
+    legend.key.width = unit(0.4, "line"),
+    legend.key.height = unit(1, "line")
+  )
+ggsave(file.path(output_path, "UMAPs/UMAP_Ephrin.png"), width = 8, height = 8, dpi = 300)
+```
+
+
+```{r}
 saveRDS(cds, "cds_2000.rds")
 # Use rdsToH5ad.R pipeline to convert rds to h5ad
 ```
 
-# 3. Genes associated with APM-MHC interaction
-## 3.1 Calculate aggregate expression score for MHCI and MHCII genes
+# 2. Genes associated with APM-MHC interaction
+## 2.1 Calculate aggregate expression score for MHCI and MHCII genes
+```{r}
+cds <- readRDS("cds_2000.rds")
+dim(cds)
+```
+
 ```{r}
 # MHCI and MHCII genes
 APM_MHC_CI_genes <- c(
@@ -231,7 +271,7 @@ colData(cds)$APM_MHC_CI_score <- calculate_aggregate_expression_score(cds, signa
 colData(cds)$APM_MHC_CII_score <- calculate_aggregate_expression_score(cds, signature_genes = APM_MHC_CII_genes)
 ```
 
-## 3.2 DEG analysis for each kinase in untreated cells
+## 2.2 DEG analysis for each kinase in untreated cells
 ```{r}
 kinases <- colData(cds)$gene_id %>%
   unique() %>%
@@ -271,7 +311,7 @@ saveRDS(gene_set_score_diff_test.list, file.path(output_path, "MHC_genes/gene_se
 ```
 
 ```{r}
-# gene_set_score_diff_test.list <- readRDS("gene_set_score_diff_test.list.rds")
+# gene_set_score_diff_test.list <- readRDS(file.path(output_path, "MHC_genes/gene_set_score_diff_test.list.rds"))
 gene_set_score_diff_test_results.list <- list()
 for (kinase in kinases) {
   gene_set_score_diff_test_results.list[[kinase]] <- do.call("rbind", gene_set_score_diff_test.list[[kinase]])
@@ -283,7 +323,7 @@ saveRDS(gene_set_score_diff_test_results, file.path(output_path, "MHC_genes/gene
 ```
 
 ```{r}
-# gene_set_score_diff_test_results <- readRDS("gene_set_score_diff_test_results")
+# gene_set_score_diff_test_results <- readRDS(file.path(output_path, "MHC_genes/gene_set_score_diff_test_results.rds"))
 gene_set_score_diff_test_results$q_value <- p.adjust(gene_set_score_diff_test_results$p_value, method = "BH")
 
 split_data <- split(gene_set_score_diff_test_results, gene_set_score_diff_test_results$signature)
@@ -291,7 +331,7 @@ APM_MHC_CI_score_data <- split_data$APM_MHC_CI_score
 APM_MHC_CII_score_data <- split_data$APM_MHC_CII_score
 ```
 
-## 3.3 Volcano plot for kinases influencing MHCI and MHCII gene expression
+## 2.3 Volcano plot for kinases influencing MHCI and MHCII gene expression
 ```{r}
 # Volcano plot for MHCI
 volcano_data <- APM_MHC_CI_score_data %>%
@@ -300,6 +340,7 @@ volcano_data <- APM_MHC_CI_score_data %>%
 # Identify high-value points for labeling
 high_value_points <- volcano_data %>%
   filter(q_value < 0.1 & abs(beta) > 0.1) # Adjust the thresholds as needed
+write.csv(high_value_points, file.path(output_path, "MHC_genes/high_value_points_MHCI.csv"), row.names = FALSE)
 
 # Create the volcano plot with labels
 p <- volcano_data %>%
@@ -348,6 +389,7 @@ volcano_data <- APM_MHC_CII_score_data %>%
 # Identify high-value points for labeling
 high_value_points <- volcano_data %>%
   filter(q_value < 0.1 & abs(beta) > 0.1) # Adjust the thresholds as needed
+write.csv(high_value_points, file.path(output_path, "MHC_genes/high_value_points_MHCII.csv"), row.names = FALSE)
 
 # Create the volcano plot with labels
 p <- volcano_data %>%
@@ -391,7 +433,7 @@ ggsave(file.path(output_path, "MHC_genes/Effect_size_MHCII_top_gene_label.pdf"),
 # 3. Genes associated with T cell dose response
 ## 3.1 UMAP of top 30 DEGs
 ```{r}
-Tcell_dose_diff_test <- readRDS(file.path(output_path, "DEG_testing/NTC_CRISPRI_dose_response_diff_test_20250520_replicates_ori.rds"))
+Tcell_dose_diff_test <- readRDS(file.path(output_path, "NTC_analysis/DEG_testing/NTC_CRISPRI_dose_response_diff_test_20250520_replicates_ori.rds"))
 Tcell_dose_diff_test <- Tcell_dose_diff_test %>%
   filter(!is.na(p_value)) %>%
   mutate(q_value = p.adjust(p_value, method = "BH"))
@@ -479,7 +521,7 @@ saveRDS(untreated_genotype_diff_test.list, file.path(output_path, "Diff_test/unt
 ```
 
 ```{r}
-# untreated_genotype_diff_test.list<- readRDS("CRISPRI_Figures/Diff_test/untreated_genotype_diff_test.list.rds")
+# untreated_genotype_diff_test.list<- readRDS(file.path(output_path, "Diff_test/untreated_genotype_diff_test.list.rds"))
 for (target in names(untreated_genotype_diff_test.list)) {
   untreated_genotype_diff_test.list[[target]]$gene_id <- rep(target, nrow(untreated_genotype_diff_test.list[[target]]))
 }
@@ -605,7 +647,7 @@ saveRDS(genotype_by_Tcell_dose_diff_test.list, file.path(output_path, "Diff_test
 ```
 
 ```{r}
-# genotype_by_Tcell_dose_diff_test.list <- readRDS("CRISPRI_Figures/Diff_test/genotype_by_Tcell_dose_diff_test.list.rds")
+# genotype_by_Tcell_dose_diff_test.list <- readRDS(file.path(output_path, "Diff_test/genotype_by_Tcell_dose_diff_test.list.rds"))
 
 for (dose in names(genotype_by_Tcell_dose_diff_test.list)) {
   for (target in kinases) {
@@ -876,6 +918,7 @@ sod2_csf3_modulating_kinases$gene_id <- sapply(sod2_csf3_modulating_kinases$term
 
 sod2_csf3_modulating_kinases <- sod2_csf3_modulating_kinases %>%
   dplyr::distinct(gene_short_name, gene_id, .keep_all = TRUE)
+write.csv(sod2_csf3_modulating_kinases, file.path(output_path, "Heatmaps/SOD2_CSF3_modulators_top_Tcell_dose_CD274_IDO1.csv"), row.names = FALSE)
 ```
 
 ```{r}
