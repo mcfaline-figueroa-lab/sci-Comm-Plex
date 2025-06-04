@@ -253,64 +253,105 @@ p <- volcano_data %>%
 ggsave(file.path(output_dir, "DEG_testing/Effect_size_distribution_NTC_Tcell_dose_response_diff_test_Supplementary_Figure_run2_random_sig_label.png"), plot = p, dpi = 600, width = 2, height = 1.25)
 ```
 
-## 2.3 GO analysis
+## 2.3 Pathway analysis
 ```{r}
 library(clusterProfiler)
-library(org.Hs.eg.db) # Substitute with the correct organism package as needed
+library(msigdbr)
+library(org.Hs.eg.db)
 library(enrichplot)
 ```
 
 ```{r}
-selected_columns <- high_value_points[, c("gene_short_name", "normalized_effect")]
-selected_columns
+Tcell_dose_response_genes <- Tcell_dose_response_diff_test %>%
+    dplyr::filter(term == "dose") %>%
+    dplyr::filter(q_value < 0.05) %>%
+    dplyr::arrange(-normalized_effect) %>%
+    dplyr::select(gene_short_name, normalized_effect)
+rank_list <- Tcell_dose_diff_genes %>% dplyr::pull(normalized_effect)
+names(rank_list) <- Tcell_dose_diff_genes %>% dplyr::pull(gene_short_name)
 ```
 
 ```{r}
-mapped_genes <- bitr(selected_columns$gene_short_name, fromType = "SYMBOL", toType = "ENTREZID", OrgDb = org.Hs.eg.db) # 4.55% fail to map
+# Get Hallmark gene sets from MSigDB
+hallmark <- msigdbr(species = "Homo sapiens", collection = "H")
+hallmark_list <- split(hallmark$gene_symbol, hallmark$gs_name)
+
+# Run GSEA
+gsea_res <- fgsea(pathways = hallmark_list, stats = rank_list)
+gsea_res_sig <- gsea_res[gsea_res$NES > 0 & gsea_res$padj < 0.05, ]
 ```
 
 ```{r}
-selected_columns_mapped <- merge(selected_columns, mapped_genes,
-  by.x = "gene_short_name", by.y = "SYMBOL",
-  all.x = TRUE
-)
-selected_columns_mapped # 104 3
+ggplot(gsea_res_sig, aes(x = NES, y = reorder(pathway, NES), fill = -log10(padj))) +
+    geom_col() +
+    labs(x = "Normalized Enrichment Score (NES)", y = "Pathway") +
+    scale_fill_gradient(low = "#C0C6CB", high = "#27408E") +
+    monocle3:::monocle_theme_opts() +
+    theme(legend.position = "top",
+        axis.text = element_text(size = 8),
+        axis.title = element_text(size = 10),
+        legend.text = element_text(size = 8),
+        legend.title = element_text(size = 10))
+ggsave(file.path(output_dir, "DEG_testing/gsea_res_sig.png"), width = 5, height = 4)
+ggsave(file.path(output_dir, "DEG_testing/gsea_res_sig.pdf"), width = 5, height = 4)
 ```
 
 ```{r}
-selected_columns_mapped <- na.omit(selected_columns_mapped)
-selected_columns_mapped # 100 3
+# Concat all genes
+gsea_res_sig_genes <- gsea_res_sig %>%
+    dplyr::arrange(NES) %>%
+    dplyr::select(leadingEdge)
+gsea_res_sig_genes_list <- unlist(gsea_res_sig_genes$leadingEdge)
 ```
 
 ```{r}
-selected_columns_mapped <- selected_columns_mapped %>% arrange(desc(normalized_effect))
+NTC_exprs <- exprs(NTC_cds)
+NTC_exprs <- Matrix::t(NTC_exprs) / colData(NTC_cds)$Size_Factor
+NTC_exprs <- log(NTC_exprs + 1)
+colnames(NTC_exprs) <- rowData(NTC_cds)$gene_short_name
+NTC_exprs <- NTC_exprs[, unique(gsea_res_sig_genes_list)]
+
+NTC_exprs_df <- NTC_exprs %>%
+  as.matrix() %>%
+  as.data.frame() %>%
+  dplyr::mutate(dosage = colData(NTC_cds)$dosage) %>%
+  tidyr::pivot_longer(
+    cols = all_of(gsea_res_sig_genes_list),
+    names_to = "gene",
+    values_to = "expr"
+  ) %>%
+  dplyr::group_by(dosage, gene) %>%
+  dplyr::summarise(mean_expr = mean(expr)) %>%
+  tidyr::pivot_wider(names_from = "gene", values_from = "mean_expr") %>%
+  tibble::column_to_rownames("dosage") %>%
+  as.matrix() %>% t()
+NTC_exprs_df <- NTC_exprs_df[gsea_res_sig_genes_list, ]
+
+paletteLength <- 35
+hmcols <- colorRampPalette(c("navy", "white", "firebrick2"))(paletteLength)
+pheatmap(NTC_exprs_df,
+        cluster_rows = FALSE,
+        cluster_cols = FALSE,
+        scale = "row",
+        color = hmcols,
+        filename = file.path(output_dir, "DEG_testing/gsea_res_sig_heatmap.png"),
+        fontsize_col = 8,
+        fontsize_row = 5,
+        angle_col = 0,
+        width = 4, height = 4)
+pheatmap(NTC_exprs_df,
+        cluster_rows = FALSE,
+        cluster_cols = FALSE,
+        scale = "row",
+        color = hmcols,
+        filename = file.path(output_dir, "DEG_testing/gsea_res_sig_heatmap.pdf"),
+        fontsize_col = 8,
+        fontsize_row = 5,
+        angle_col = 0,
+        width = 4, height = 4)
 ```
 
-```{r}
-geneList <- setNames(selected_columns_mapped$normalized_effect, selected_columns_mapped$ENTREZID)
-
-go_results <- gseGO(
-  geneList = geneList,
-  OrgDb = org.Hs.eg.db,
-  minGSSize = 10,
-  maxGSSize = 500,
-  pvalueCutoff = 0.05,
-  verbose = FALSE
-)
-```
-
-```{r}
-dim(go_results@result) # 27 12
-```
-
-```{r fig.height=20, fig.width=8}
-library(enrichplot)
-p <- dotplot(go_results, showCategory = 60, split = ".sign") + facet_grid(. ~ .sign)
-ggsave(file.path(output_dir, "DEG_testing/dotplot_go_results.png"), plot = p, width = 6, height = 22, dpi = 300)
-ggsave(file.path(output_dir, "DEG_testing/dotplot_go_results.pdf"), plot = p, width = 6, height = 22, dpi = 300)
-```
-
-## 2.4 T cell dose-response genes
+## 2.4 T cell dose-response significant genes
 ```{r}
 Tcell_dose_response_sig_genes <- Tcell_dose_response_diff_test %>%
   filter(grepl("dose", term) & q_value < 0.01 & abs(normalized_effect) > 1) %>%

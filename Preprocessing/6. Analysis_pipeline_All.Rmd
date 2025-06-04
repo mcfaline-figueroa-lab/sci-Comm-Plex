@@ -42,7 +42,7 @@ cc.genes <- readRDS("/burg/iicd/users/qc2358/Kinase_project/github_repos/sci-ple
 
 ```{r}
 # Define the number of cores to use for parallel processing
-n_cores <- 20
+n_cores <- 8
 message(paste("Using", n_cores, "cores for parallel processing."))
 # Adjust this value based on your system memory and needs.
 options(future.globals.maxSize = 6 * 1024^3) # 6GB
@@ -445,8 +445,8 @@ Tcell_dose_response_diff_test_top_deg <- Tcell_dose_response_diff_test_top_deg[o
 ```
 
 ```{r}
-top30 <- head(Tcell_dose_response_diff_test_top_deg, 30)
-top_Tcell_dose_gene <- top30[top30$normalized_effect > 1.3, ]
+top50 <- head(Tcell_dose_response_diff_test_top_deg, 50)
+top_Tcell_dose_gene <- top50[top50$normalized_effect > 1.2, ]
 plot_cells(cds,
   genes = c(top_Tcell_dose_gene$gene_short_name),
   show_trajectory_graph = FALSE
@@ -945,7 +945,7 @@ pheatmap::pheatmap(sod2_csf3_modulating_kinases_beta_heatmap,
   fontsize = 9,
   treeheight_col = 10,
   height = 3,
-  width = 8
+  width = 10
 )
 
 pheatmap::pheatmap(sod2_csf3_modulating_kinases_beta_heatmap,
@@ -957,7 +957,7 @@ pheatmap::pheatmap(sod2_csf3_modulating_kinases_beta_heatmap,
   fontsize = 9,
   treeheight_col = 10,
   height = 3,
-  width = 8
+  width = 10
 )
 ```
 
