@@ -1,0 +1,251 @@
+---
+title: "DMSO T-cell Treatment Analysis"
+output: html_notebook
+---
+
+# Setup and Libraries
+```{r setup}
+# Clean environment
+rm(list=ls())
+gc()
+
+# Load libraries
+library(monocle3)
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(tibble)
+library(pheatmap)
+library(ggpubr)
+
+# Set output directory
+out_dir = "/home/user/Documents/Kinase_project/figures/dmso"
+dir.create(out_dir, showWarnings = FALSE, recursive = TRUE)
+```
+
+# Helper Functions
+```{r functions}
+# Calculate aggregate expression score
+calculate_aggregate_expression_score <- function(cds, signature_genes, from_id = FALSE){
+  if(from_id == TRUE){
+    cds_subset = cds[rowData(cds)$id %in% signature_genes,]
+  } else {
+    cds_subset = cds[rowData(cds)$gene_short_name %in% signature_genes,]
+  }
+  
+  aggregate_signature_expression = exprs(cds_subset)
+  aggregate_signature_expression = t(t(aggregate_signature_expression) / pData(cds_subset)$Size_Factor)
+  aggregate_signature_expression = Matrix::colSums(aggregate_signature_expression)
+  signature_score = log(aggregate_signature_expression + 1)
+  
+  return(signature_score)
+}
+
+# Estimate dispersions for gene selection
+estimateDispersionsForCellDataSet <- function(cds, min_cells_detected = 100, removeOutliers = FALSE){
+  # Load from sci-plex functions if available
+  source("~/Documents/github_repos/sci-plex/bin/dispersions_functions.R")
+  return(estimateDispersionsForCellDataSet(cds, min_cells_detected, removeOutliers))
+}
+```
+
+# Load Data
+```{r load_data}
+# Load CDS object
+cds <- readRDS("/home/user/Documents/Kinase_project/20250430_BT333_Tcell_11chems_run2/11-final-output/CDS_BT333_Tcells_0_cutoff.RDS")
+
+# Load differential test results
+Tcell_dose_response_diff_test <- readRDS("/home/user/Documents/Kinase_project/20250206novogen_CRISPRA_run5_correct/Figure1/NTC_CRISPRI_dose_response_diff_test_20240905_replicates_ori.rds")
+
+print(paste("Loaded CDS with", ncol(cds), "cells"))
+```
+
+# Data Processing
+```{r process_data}
+# Filter cells
+cds <- cds[, colData(cds)$n.umi >= 500]
+cds <- cds[, !is.na(colData(cds)$total_hash_umis_per_cell_ID)]
+cds <- cds[, colData(cds)$total_hash_umis_per_cell_ID > 5]
+cds <- cds[, colData(cds)$top_to_second_best_ratio > 2]
+
+# Parse oligo information
+col_data_df <- as.data.frame(colData(cds))
+col_data_df <- col_data_df %>%
+  separate(oligo, 
+           into = c("Experiment", "Drug", "Dose", "Tcell_Treatment", "Replicate", "Well"),
+           sep = "_", 
+           remove = FALSE)
+
+colData(cds) <- DataFrame(col_data_df)
+
+# Filter for DMSO only
+target_drugs <- c("DMSO")
+target_rows <- which(colData(cds)$Drug %in% target_drugs)
+cds <- cds[, target_rows]
+
+# Remove NAs
+cds <- cds[, !is.na(colData(cds)$oligo)]
+
+print(paste("Processed CDS with", ncol(cds), "cells"))
+```
+
+# Dimensionality Reduction
+```{r dimensionality_reduction}
+# Estimate size factors and detect genes
+cds <- estimate_size_factors(cds)
+cds <- detect_genes(cds)
+
+# Get high-value dose-response genes
+high_value_points <- Tcell_dose_response_diff_test %>%
+  filter(grepl("dose", term), q_value < 0.01, abs(normalized_effect) > 0.1)
+
+# Preprocess and reduce dimensions
+cds <- preprocess_cds(cds,
+                      num_dim = 20,
+                      use_genes = high_value_points$id)
+
+cds <- reduce_dimension(cds, 
+                        umap.n_neighbors = 20L, 
+                        umap.min_dist = 0.1, 
+                        max_components = 2,
+                        umap.fast_sgd = FALSE,
+                        cores = 1)
+
+# Store UMAP coordinates
+colData(cds)$UMAP1 <- reducedDims(cds)[["UMAP"]][,1]
+colData(cds)$UMAP2 <- reducedDims(cds)[["UMAP"]][,2]
+```
+
+# Calculate Gene Signatures
+```{r gene_signatures}
+# Define gene signatures
+APM_MHC_CI_genes <- c("PSMB5", "PSMB6", "PSMB7", "PSMB8", "PSMB9", "PSMB10",
+                      "TAP1", "TAP2", "ERAP1", "ERAP2", "CANX", "CALR", "PDIA3",
+                      "TAPBP", "B2M", "HLA-A", "HLA-B", "HLA-C")
+
+# Get T-cell dose-response genes
+Tcell_dose_genes <- Tcell_dose_response_diff_test %>%
+  filter(grepl("dose", term), q_value < 0.001, abs(normalized_effect) > 1) %>%
+  pull(gene_short_name)
+
+# Calculate scores
+colData(cds)$APM_MHC_CI_score <- calculate_aggregate_expression_score(cds, APM_MHC_CI_genes)
+colData(cds)$Tcell_dose_response_score <- calculate_aggregate_expression_score(cds, Tcell_dose_genes)
+```
+
+# Figure 1: UMAP by T-cell Treatment
+```{r fig1_umap}
+dosage_colors <- c('NoT' = '#023047', '0.5T' = '#FFD166')
+
+plot_cells(cds, color_cells_by = "Tcell_Treatment", cell_size = 0.2) +
+  scale_color_manual(values = dosage_colors) +
+  theme_void() +
+  theme(legend.position = "right",
+        legend.key.width = unit(0.2, "line"),
+        legend.key.height = unit(0.2, "line"))
+
+ggsave(paste0(out_dir, "/umap_tcell_treatment.png"), dpi = 600, width = 3, height = 1.5)
+ggsave(paste0(out_dir, "/umap_tcell_treatment.pdf"), dpi = 600, width = 3, height = 1.5)
+ggsave(paste0(out_dir, "/umap_tcell_treatment.svg"), dpi = 600, width = 3, height = 1.5)
+```
+
+# Figure 2: MHC-I Score Violin Plot
+```{r fig2_mhci}
+plot_data <- as.data.frame(colData(cds))
+
+ggplot(plot_data, 
+       aes(x = factor(Tcell_Treatment, levels = c('NoT', '0.5T')), 
+           y = APM_MHC_CI_score, 
+           fill = factor(Tcell_Treatment, levels = c('NoT', '0.5T')))) +
+  geom_violin(color = "black", size = 0.1) +
+  stat_summary(fun = mean, geom = "point", size = 0.1) +
+  scale_fill_manual(values = dosage_colors) +
+  theme_classic() +
+  theme(text = element_text(size = 6),
+        legend.position = "none",
+        axis.text.x = element_text(size = 4, angle = 45, hjust = 1)) +
+  xlab("T-cell treatment") +
+  ylab("MHCI Score") +
+  stat_compare_means(size = 1.5, 
+                     method = "t.test",
+                     label = "p.signif", 
+                     label.x = 1.5)
+
+ggsave(paste0(out_dir, "/MHCI_Tcell_treatment.png"), dpi = 600, height = 1.5, width = 1)
+```
+
+# Figure 3: T-cell Dose Response Score
+```{r fig3_dose_response}
+ggplot(plot_data, 
+       aes(x = factor(Tcell_Treatment, levels = c('NoT', '0.5T')), 
+           y = Tcell_dose_response_score, 
+           fill = factor(Tcell_Treatment, levels = c('NoT', '0.5T')))) +
+  geom_violin(color = "black", size = 0.1) +
+  stat_summary(fun = mean, geom = "point", size = 0.1) +
+  scale_fill_manual(values = dosage_colors) +
+  theme_classic() +
+  theme(text = element_text(size = 6),
+        legend.position = "none",
+        axis.text.x = element_text(size = 4, angle = 45, hjust = 1)) +
+  xlab("T-cell treatment") +
+  ylab("T-cell Dose Response Score") +
+  stat_compare_means(size = 1.5, 
+                     method = "t.test",
+                     label = "p.signif", 
+                     label.x = 1.5)
+
+ggsave(paste0(out_dir, "/Tcell_dose_response_score_Tcell_treatment.png"), 
+       dpi = 600, height = 1.5, width = 1)
+```
+
+# Figure 4: Gene Expression Heatmap
+```{r fig4_heatmap}
+# Get top 30 genes
+top_30_genes <- Tcell_dose_response_diff_test %>%
+  filter(grepl("dose", term), q_value < 0.01) %>%
+  arrange(q_value) %>%
+  head(30) %>%
+  pull(gene_short_name)
+
+# Map to gene IDs
+gene_mapping <- fData(cds) %>%
+  as.data.frame() %>%
+  tibble::rownames_to_column("gene_id")
+
+top_30_ids <- gene_mapping %>%
+  filter(gene_short_name %in% top_30_genes) %>%
+  pull(gene_id)
+
+# Extract expression data
+expr_data <- exprs(cds[top_30_ids, ])
+rownames(expr_data) <- gene_mapping$gene_short_name[match(rownames(expr_data), gene_mapping$gene_id)]
+
+# Get sample info
+sample_info <- pData(cds) %>% as.data.frame()
+
+# Calculate average by T-cell treatment
+dose_avg <- data.frame(
+  NoT = rowMeans(expr_data[, sample_info$Tcell_Treatment == "NoT"], na.rm = TRUE),
+  T_0.5 = rowMeans(expr_data[, sample_info$Tcell_Treatment == "0.5T"], na.rm = TRUE)
+)
+
+# Create heatmap
+pheatmap(
+  t(dose_avg),
+  scale = "column",
+  cluster_cols = TRUE,
+  cluster_rows = FALSE,
+  main = "Top 30 Dose-Response Genes",
+  color = colorRampPalette(c("blue", "white", "red"))(100),
+  width = 4,
+  height = 2,
+  filename = paste0(out_dir, "/dose_response_heatmap.pdf")
+)
+
+print("✓ All figures saved successfully!")
+```
+
+# Session Info
+```{r session_info}
+print(sessionInfo())
+```
