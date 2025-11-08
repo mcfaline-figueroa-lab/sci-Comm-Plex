@@ -21,8 +21,13 @@ library(dplyr)
 
 # 1. PrehashCDS Imports
 ```{r}
-base_dir <- "/burg/iicd/users/qc2358/Kinase_project"
-output_folder <- "CRISPRI_Figures"
+
+#pert_type <-"crispri" 
+
+pert_type <- "crispra"
+
+base_dir <- paste0("/home/user/Documents/Kinase_project/", pert_type, "_final/")
+output_folder <- paste0(toupper(pert_type), "_Figures")
 cds_folder <- "11-final-output/cds_precell_prehash.RDS"
 cds_path <- file.path(base_dir, cds_folder)
 
@@ -64,7 +69,10 @@ plot <- ggplot(
     legend.key.height = unit(0.2, "line"),
     text = element_text(size = 8) # Base font size for other text
   )
-
+# create the folder if it doesn't exist
+if (!dir.exists(file.path(output_path, "QC_plots"))) {
+  dir.create(file.path(output_path, "QC_plots"), recursive = TRUE)
+}
 # Save the updated plot
 ggsave(
   filename = file.path(output_path, "QC_plots/Unfiltered_UMI_per_cell.png"),
@@ -82,7 +90,8 @@ cds.pre <- cds.pre[, colData(cds.pre)$n.umi >= 500]
 # Count the median umis after we do the cutoff of 500 or more
 cols_for_writup <- colData(cds.pre) %>% as.data.frame()
 umis_column <- cols_for_writup[, "n.umi"]
-median_umi <- median(umis_column) # 2536
+median_umi <- median(umis_column)
+mean_umi <- mean(umis_column)
 ```
 
 ```{r}
@@ -396,4 +405,8 @@ dim(colData(cds.pre)[!is.na(colData(cds.pre)$second_sg), ]) / dim(colData(cds.pr
 cutoff_folder <- "11-final-output/CDS_crop_hash_FINAL_CRISPR_GBM_T_cells_500_cutoff.rds"
 cutoff_path <- file.path(base_dir, cutoff_folder)
 saveRDS(cds.pre, cutoff_path)
+```
+
+```{r}
+
 ```
