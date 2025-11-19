@@ -141,7 +141,7 @@ colData(cds)$APM_MHC_CI_score <- calculate_aggregate_expression_score(cds, APM_M
 colData(cds)$Tcell_dose_response_score <- calculate_aggregate_expression_score(cds, Tcell_dose_genes)
 ```
 
-# Figure 1: UMAP by T-cell Treatment
+# Figure : UMAP by T-cell Treatment
 ```{r fig1_umap}
 dosage_colors <- c('NoT' = '#023047', '0.5T' = '#FFD166')
 
@@ -157,7 +157,7 @@ ggsave(paste0(out_dir, "/umap_tcell_treatment.pdf"), dpi = 600, width = 3, heigh
 ggsave(paste0(out_dir, "/umap_tcell_treatment.svg"), dpi = 600, width = 3, height = 1.5)
 ```
 
-# Figure 2: MHC-I Score Violin Plot
+# Figure : MHC-I Score Violin Plot
 ```{r fig2_mhci}
 plot_data <- as.data.frame(colData(cds))
 
@@ -182,7 +182,7 @@ ggplot(plot_data,
 ggsave(paste0(out_dir, "/MHCI_Tcell_treatment.png"), dpi = 600, height = 1.5, width = 1)
 ```
 
-# Figure 3: T-cell Dose Response Score
+# Figure : T-cell Dose Response Score
 ```{r fig3_dose_response}
 ggplot(plot_data, 
        aes(x = factor(Tcell_Treatment, levels = c('NoT', '0.5T')), 
@@ -206,7 +206,7 @@ ggsave(paste0(out_dir, "/Tcell_dose_response_score_Tcell_treatment.png"),
        dpi = 600, height = 1.5, width = 1)
 ```
 
-# Figure 4: Gene Expression Heatmap
+# Figure : Gene Expression Heatmap
 ```{r fig4_heatmap}
 # Get top 30 genes
 top_30_genes <- Tcell_dose_response_diff_test %>%
@@ -253,7 +253,58 @@ pheatmap(
 print("✓ All figures saved successfully!")
 ```
 
+
+# Figure: Combined Violin Plots (MHCI Score + T-cell Dose Response Score)
+```{r fig_combined_violin}
+library(patchwork)
+dosage_colors <- c('NoT' = '#023047', '0.5T' = '#FFD166')
+# Extract the data
+score_data <- as.data.frame(colData(cds)[, c("Tcell_Treatment", "APM_MHC_CI_score", "Tcell_dose_response_score")])
+# Reshape to long format
+score_data_long <- score_data %>%
+  pivot_longer(cols = c("APM_MHC_CI_score", "Tcell_dose_response_score"),
+names_to = "Score_Type",
+values_to = "Score") %>%
+  mutate(Score_Type = factor(Score_Type, 
+levels = c("APM_MHC_CI_score", "Tcell_dose_response_score"),
+labels = c("MHCI", "TCDG")))
+# Create the plot with facets
+p <- ggplot(score_data_long, 
+       aes(x = factor(Tcell_Treatment, levels = c('NoT', '0.5T')), 
+y = Score, 
+fill = factor(Tcell_Treatment, levels = c('NoT', '0.5T')))) +
+  geom_violin(color = "black", size = 0.3) +
+  stat_summary(fun = mean, geom = "point", size = 0.5) +
+  scale_fill_manual(values = dosage_colors) +
+  facet_wrap(~Score_Type, ncol = 1, scales = "free_y", strip.position = "top") +
+  labs(x = "T cell:GBM    ", 
+y = "Expression") +
+  theme_classic() +
+  theme(legend.position = "none",
+axis.text = element_text(size = 6),
+axis.text.x = element_text(angle = 45, hjust = 1, size = 6),
+axis.title.y = element_text(size = 12),
+axis.title.x = element_text(size = 12),
+strip.background = element_blank(),
+strip.text = element_text(size = 6),
+strip.placement = "outside",
+panel.spacing = unit(0.2, "lines"),
+line = element_line(size = 0.2)) +
+  stat_compare_means(size = 3, 
+method = "t.test",
+label = "p.signif", 
+label.x = 1.5)
+
+p
+ggsave(paste0(out_dir, "/combined_violin_plots.png"), width = 1, height = 2, dpi = 600)
+ggsave(paste0(out_dir, "/combined_violin_plots.pdf"), width = 1, height = 2, dpi = 600)
+ggsave(paste0(out_dir, "/combined_violin_plots.svg"), width = 1, height = 2, dpi = 600)
+
+```
+
+
 # Session Info
 ```{r session_info}
 print(sessionInfo())
 ```
+
