@@ -1,0 +1,576 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code.
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Cmd+Shift+Enter*.
+
+```{r}
+#install.packages("UpSetR")
+```
+
+```{r}
+# Lingting Shi Columbia University MacFaline-Figeuroa Lab 
+
+#Clean working enviorment
+rm(list=ls())
+gc()
+
+```
+```{r}
+#remotes::install_version("Matrix", version = "1.6-1.1")
+```
+
+```{r}
+library(devtools)
+library(parallel)
+library(ggplot2)
+library(ggridges)
+library(gridExtra)
+library(plyr)
+library(tidyr)
+library(tibble)
+library(pheatmap)
+library(piano)
+library(DelayedArray)
+library(monocle3)
+library(UpSetR)
+library(dplyr)
+library(ggrepel)
+library(ggpubr)
+```
+
+
+```{r}
+### Load useful function from the sci-plex guthub repository
+source("~/Documents/github_repos/sci-plex/bin/cell_cycle.R")
+source("~/Documents/github_repos/sci-plex/bin/loadGSCSafe.R")
+source("~/Documents/github_repos/sci-plex/bin/dispersions_functions.R")
+source("~/Documents/github_repos/sci-plex/bin/GSA_helper_functions.R")
+cc.genes = readRDS("~/Documents/github_repos/sci-plex/bin/cc.genes.RDS")
+```
+
+```{r}
+gene_set_score_diff_test_results_a <- readRDS("/home/user/Documents/Kinase_project/crispra_final/CRISPRA_Figures/MHC_genes/gene_set_score_diff_test_results.rds")
+gene_set_score_diff_test_results_a$q_value <- p.adjust(gene_set_score_diff_test_results_a$p_value, method = "BH")
+gene_set_score_diff_test_results_i <- readRDS("/home/user/Documents/Kinase_project/crispri_final/CRISPRI_Figures/MHC_genes/gene_set_score_diff_test_results.rds")
+gene_set_score_diff_test_results_i$q_value <- p.adjust(gene_set_score_diff_test_results_i$p_value, method = "BH")
+```
+
+```{r}
+unique(gene_set_score_diff_test_results_a$signature)
+```
+
+
+```{r}
+gene_set_filtered_i <- gene_set_score_diff_test_results_i %>%
+  filter(grepl("gene_id", term))
+gene_set_filtered_a <- gene_set_score_diff_test_results_a %>%
+  filter(grepl("gene_id", term))
+
+```
+
+```{r}
+gene_set_score_beta_i<- gene_set_score_diff_test_results_i %>% 
+  filter(grepl("gene_id", term)) %>% 
+  group_by(signature, gene_id)%>% 
+  as.data.frame()
+
+head(gene_set_score_beta_i)
+
+```
+```{r}
+
+# Combine both datasets with source labels
+gene_set_combined <- bind_rows(
+  gene_set_filtered_a %>% mutate(source = "a"),  # Fixed: should be _a not _i
+  gene_set_filtered_i %>% mutate(source = "i")
+) %>%
+  select(signature, gene_id, beta, q_value, source) %>%
+  pivot_wider(
+    names_from = source, 
+    values_from = c(beta, q_value),  # Pivot both beta and q_value
+    names_sep = "_"
+  )
+
+head(gene_set_combined)
+```
+
+```{r}
+head(gene_set_combined)
+
+```
+
+```{r}
+# keep only the either qvalue columns < 0.05 
+gene_set_combined_filtered <- gene_set_combined %>%
+  filter((!is.na(q_value_a) & q_value_a < 0.05) | 
+         (!is.na(q_value_i) & q_value_i < 0.05)) %>%
+  arrange(signature, desc(beta_a), desc(beta_i))
+
+head(gene_set_combined_filtered)
+
+```
+
+```{r}
+
+
+gene_set_combined_filtered$q_value_a <- NULL
+gene_set_combined_filtered$q_value_i <- NULL
+head(gene_set_combined_filtered)
+```
+
+```{r}
+split_data_heatmap <- split(gene_set_combined_filtered, gene_set_combined_filtered$signature)
+# Access the subsets by their names
+APM_MHC_CI_score_data_matrix <- split_data_heatmap$APM_MHC_CI_score
+APM_MHC_CII_score_data_matrix <- split_data_heatmap$APM_MHC_CII_score
+Tcell_response_data_matrix <- split_data_heatmap$Tcell_response
+INFG_data_matrix <- split_data_heatmap$IFNG
+NFKB_data_matrix <- split_data_heatmap$NFKB
+head(Tcell_response_data_matrix)
+```
+```{r}
+
+# only keep beta column
+top_APM_MHC_CI_genes_matrix <- APM_MHC_CI_score_data_matrix %>% 
+  select(gene_id, beta_i,beta_a) %>% 
+  as.data.frame()
+
+row.names(top_APM_MHC_CI_genes_matrix) <- top_APM_MHC_CI_genes_matrix$gene_id
+top_APM_MHC_CI_genes_matrix$gene_id <- NULL
+hmcols <- colorRampPalette(c("blue","white","red"))(35)
+
+paletteLength <- 35
+myBreaks <- c(seq(min(top_APM_MHC_CI_genes_matrix), 0, length.out=ceiling(paletteLength/2) + 1),
+              seq(max(top_APM_MHC_CI_genes_matrix)/paletteLength, max(top_APM_MHC_CI_genes_matrix), length.out=floor(paletteLength/2)))
+
+annotation_df <- data.frame(row.names = colnames(top_APM_MHC_CI_genes_matrix), 
+                            condition_id = colnames(top_APM_MHC_CI_genes_matrix))
+
+
+```
+```{r}
+pheatmap::pheatmap(Tcell_response_genes_matrix,
+                   clustering_method = "ward.D2",
+                   cluster_cols = FALSE,
+                   color = hmcols,
+                   breaks = myBreaks,
+                   cutree_rows = 6,
+                   treeheight_row = 10,
+                   fontsize = 6,
+                   fontsize_col = 4,
+                   height = 5,
+                   width = 1.4,
+                   border_color = NA,
+                   file = "/home/user/Documents/Kinase_project/crispria_combined/figures_degs/Tcell_response_genes.png")
+
+pheatmap::pheatmap(Tcell_response_genes_matrix,
+                   clustering_method = "ward.D2",
+                   cluster_cols = FALSE,
+                   color = hmcols,
+                   breaks = myBreaks,
+                   cutree_rows = 6,
+                   treeheight_row = 10,
+                   fontsize = 6,
+                   fontsize_col = 4,
+                   height = 5,
+                   width = 1.4,
+                   border_color = NA,
+                   file = "/home/user/Documents/Kinase_project/crispria_combined/figures_degs/Tcell_response_genes.pdf")
+
+```
+
+```{r}
+
+# only keep beta column
+top_APM_MHC_CII_genes_matrix <- APM_MHC_CII_score_data_matrix %>% 
+  select(gene_id, beta_i,beta_a) %>% 
+  as.data.frame()
+
+row.names(top_APM_MHC_CII_genes_matrix) <- top_APM_MHC_CII_genes_matrix$gene_id
+top_APM_MHC_CII_genes_matrix$gene_id <- NULL
+hmcols <- colorRampPalette(c("blue","white","red"))(35)
+
+paletteLength <- 35
+myBreaks <- c(seq(min(top_APM_MHC_CII_genes_matrix), 0, length.out=ceiling(paletteLength/2) + 1),
+              seq(max(top_APM_MHC_CII_genes_matrix)/paletteLength, max(top_APM_MHC_CII_genes_matrix), length.out=floor(paletteLength/2)))
+
+annotation_df <- data.frame(row.names = colnames(top_APM_MHC_CII_genes_matrix), 
+                            condition_id = colnames(top_APM_MHC_CII_genes_matrix))
+
+
+```
+```{r}
+pheatmap::pheatmap(top_APM_MHC_CII_genes_matrix,
+                   clustering_method = "ward.D2",
+                   cluster_cols = FALSE,
+                   color = hmcols,
+                   breaks = myBreaks,
+                   cutree_rows = 6,
+                   treeheight_row = 10,
+                   fontsize = 6,
+                   fontsize_col = 4,
+                   height = 2.75,
+                   width = 1.4,
+                   border_color = NA,
+                   file = "/home/user/Documents/Kinase_project/crispria_combined/figures_degs/top_APM_MHC_CII_genes.png")
+
+
+pheatmap::pheatmap(top_APM_MHC_CII_genes_matrix,
+                   clustering_method = "ward.D2",
+                   cluster_cols = FALSE,
+                   color = hmcols,
+                   breaks = myBreaks,
+                   cutree_rows = 6,
+                   treeheight_row = 10,
+                   fontsize = 6,
+                   fontsize_col = 4,
+                   height = 2.75,
+                   width = 1.4,
+                   border_color = NA,
+                   file = "/home/user/Documents/Kinase_project/crispria_combined/figures_degs/top_APM_MHC_CII_genes.pdf")
+
+
+```
+
+```{r}
+
+# only keep beta column
+Tcell_response_genes_matrix <- Tcell_response_data_matrix %>% 
+  select(gene_id, beta_i,beta_a) %>% 
+  as.data.frame()
+
+row.names(Tcell_response_genes_matrix) <- Tcell_response_genes_matrix$gene_id
+Tcell_response_genes_matrix$gene_id <- NULL
+hmcols <- colorRampPalette(c("blue","white","red"))(35)
+
+paletteLength <- 35
+myBreaks <- c(seq(min(Tcell_response_genes_matrix), 0, length.out=ceiling(paletteLength/2) + 1),
+              seq(max(Tcell_response_genes_matrix)/paletteLength, max(Tcell_response_genes_matrix), length.out=floor(paletteLength/2)))
+
+annotation_df <- data.frame(row.names = colnames(Tcell_response_genes_matrix), 
+                            condition_id = colnames(Tcell_response_genes_matrix))
+
+
+```
+```{r}
+pheatmap::pheatmap(Tcell_response_genes_matrix,
+                   clustering_method = "ward.D2",
+                   cluster_cols = FALSE,
+                   color = hmcols,
+                   breaks = myBreaks,
+                   cutree_rows = 6,
+                   treeheight_row = 10,
+                   fontsize = 6,
+                   fontsize_col = 4,
+                   height = 5,
+                   width = 1.4,
+                   border_color = NA,
+                   file = "/home/user/Documents/Kinase_project/crispria_combined/figures_degs/Tcell_response_genes.png")
+
+
+
+pheatmap::pheatmap(Tcell_response_genes_matrix,
+                   clustering_method = "ward.D2",
+                   cluster_cols = FALSE,
+                   color = hmcols,
+                   breaks = myBreaks,
+                   cutree_rows = 6,
+                   treeheight_row = 10,
+                   fontsize = 6,
+                   fontsize_col = 4,
+                   height = 5,
+                   width = 1.4,
+                   border_color = NA,
+                   file = "/home/user/Documents/Kinase_project/crispria_combined/figures_degs/Tcell_response_genes.pdf")
+```
+
+```{r}
+
+# only keep beta column
+top_INFG_genes_matrix <- INFG_data_matrix %>% 
+  select(gene_id, beta_i,beta_a) %>% 
+  as.data.frame()
+
+row.names(top_INFG_genes_matrix) <- top_INFG_genes_matrix$gene_id
+top_INFG_genes_matrix$gene_id <- NULL
+hmcols <- colorRampPalette(c("blue","white","red"))(35)
+
+paletteLength <- 35
+myBreaks <- c(seq(min(top_INFG_genes_matrix), 0, length.out=ceiling(paletteLength/2) + 1),
+              seq(max(top_INFG_genes_matrix)/paletteLength, max(top_INFG_genes_matrix), length.out=floor(paletteLength/2)))
+
+annotation_df <- data.frame(row.names = colnames(top_INFG_genes_matrix), 
+                            condition_id = colnames(top_INFG_genes_matrix))
+
+
+```
+```{r}
+pheatmap::pheatmap(top_INFG_genes_matrix,
+                   clustering_method = "ward.D2",
+                   cluster_cols = FALSE,
+                   color = hmcols,
+                   breaks = myBreaks,
+                   cutree_rows = 6,
+                   treeheight_row = 10,
+                   fontsize = 6,
+                   fontsize_col = 4,
+                   height = 2.75,
+                   width = 1.4,
+                   border_color = NA,
+                   file = "/home/user/Documents/Kinase_project/crispria_combined/figures_degs/top_INFG_genes.png")
+
+
+pheatmap::pheatmap(top_INFG_genes_matrix,
+                   clustering_method = "ward.D2",
+                   cluster_cols = FALSE,
+                   color = hmcols,
+                   breaks = myBreaks,
+                   cutree_rows = 6,
+                   treeheight_row = 10,
+                   fontsize = 6,
+                   fontsize_col = 4,
+                   height = 2.75,
+                   width = 1.4,
+                   border_color = NA,
+                   file = "/home/user/Documents/Kinase_project/crispria_combined/figures_degs/top_INFG_genes.pdf")
+```
+
+```{r}
+
+# only keep beta column
+top_NFKB_genes_matrix <- NFKB_data_matrix %>% 
+  select(gene_id, beta_i,beta_a) %>% 
+  as.data.frame()
+
+row.names(top_NFKB_genes_matrix) <- top_NFKB_genes_matrix$gene_id
+top_NFKB_genes_matrix$gene_id <- NULL
+hmcols <- colorRampPalette(c("blue","white","red"))(35)
+
+paletteLength <- 35
+myBreaks <- c(seq(min(top_NFKB_genes_matrix), 0, length.out=ceiling(paletteLength/2) + 1),
+              seq(max(top_NFKB_genes_matrix)/paletteLength, max(top_NFKB_genes_matrix), length.out=floor(paletteLength/2)))
+
+annotation_df <- data.frame(row.names = colnames(top_NFKB_genes_matrix), 
+                            condition_id = colnames(top_NFKB_genes_matrix))
+
+
+```
+```{r}
+pheatmap::pheatmap(top_NFKB_genes_matrix,
+                   clustering_method = "ward.D2",
+                   cluster_cols = FALSE,
+                   color = hmcols,
+                   breaks = myBreaks,
+                   cutree_rows = 6,
+                   treeheight_row = 10,
+                   fontsize = 6,
+                   fontsize_col = 4,
+                   height = 2.75,
+                   width = 1.4,
+                   border_color = NA,
+                   file = "/home/user/Documents/Kinase_project/crispria_combined/figures_degs/top_NFKB_genes.png")
+
+pheatmap::pheatmap(top_NFKB_genes_matrix,
+                   clustering_method = "ward.D2",
+                   cluster_cols = FALSE,
+                   color = hmcols,
+                   breaks = myBreaks,
+                   cutree_rows = 6,
+                   treeheight_row = 10,
+                   fontsize = 6,
+                   fontsize_col = 4,
+                   height = 2.75,
+                   width = 1.4,
+                   border_color = NA,
+                   file = "/home/user/Documents/Kinase_project/crispria_combined/figures_degs/top_NFKB_genes.pdf")
+
+                  
+```
+```{r}
+#install.packages("ComplexHeatmap")
+library(ComplexHeatmap)
+library(tidyverse)
+
+```
+```{r}
+#read "/home/user/Documents/Kinase_project/20250206novogen_CRISPRA_run5_correct/SOD2_CSF3_modulators_top_Tcell_dose_CD274_IDO1.csv"
+CRISPRA_Deg <- read.csv("/home/user/Documents/Kinase_project/20250206novogen_CRISPRA_run5_correct/SOD2_CSF3_modulators_top_Tcell_dose_CD274_IDO1.csv")
+head(CRISPRA_Deg$gene_id)
+CRISPRI_Deg <- read.csv("/home/user/Documents/Kinase_project/crispri/CRISPRI_Figures/Heatmaps/SOD2_CSF3_modulators_top_Tcell_dose_CD274_IDO1.csv")
+head(CRISPRI_Deg$gene_id)
+
+```
+
+```{r}
+
+CRISPRA_decipher <- read.csv("/home/user/Documents/Kinase_project/crispria_combined/figures_all_cells/significant_genes_crispra.csv")
+head(CRISPRA_decipher$gene_id)
+CRISPRI_decipher <- read.csv("/home/user/Documents/Kinase_project/crispria_combined/figures_all_cells/significant_genes_crispri.csv")
+head(CRISPRA_decipher$gene_id)
+
+```
+
+```{r}
+
+CRISPRA_mrvi <- read.csv("/home/user/Documents/Kinase_project/mrvi/saved_outputs/crispra/crispra_mrvi_distance_analysis_false.csv")
+head(CRISPRA_mrvi$kinase)
+CRISPRI_mrvi <- read.csv("/home/user/Documents/Kinase_project/mrvi/saved_outputs/crispri/crispri_mrvi_distance_analysis_false.csv")
+head(CRISPRI_mrvi$kinase)
+
+```
+```{r}
+
+# APM_MHC_CI_score
+mhc1_genes_a <- gene_set_combined %>% filter(signature == "APM_MHC_CI_score", q_value_a < 0.05) %>% pull(gene_id)
+mhc1_genes_i <- gene_set_combined %>% filter(signature == "APM_MHC_CI_score", q_value_i < 0.05) %>% pull(gene_id)
+
+# APM_MHC_CII_score
+mhc2_genes_a <- gene_set_combined %>% filter(signature == "APM_MHC_CII_score", q_value_a < 0.05) %>% pull(gene_id)
+mhc2_genes_i <- gene_set_combined %>% filter(signature == "APM_MHC_CII_score", q_value_i < 0.05) %>% pull(gene_id)
+
+# Tcell_response
+tcell_genes_a <- gene_set_combined %>% filter(signature == "Tcell_response", q_value_a < 0.05) %>% pull(gene_id)
+tcell_genes_i <- gene_set_combined %>% filter(signature == "Tcell_response", q_value_i < 0.05) %>% pull(gene_id)
+
+# TFNG
+tfng_genes_a <- gene_set_combined %>% filter(signature == "TFNG", q_value_a < 0.05) %>% pull(gene_id)
+tfng_genes_i <- gene_set_combined %>% filter(signature == "TFNG", q_value_i < 0.05) %>% pull(gene_id)
+
+# NFKB
+nfkb_genes_a <- gene_set_combined %>% filter(signature == "NFKB", q_value_a < 0.05) %>% pull(gene_id)
+nfkb_genes_i <- gene_set_combined %>% filter(signature == "NFKB", q_value_i < 0.05) %>% pull(gene_id)
+```
+
+
+
+```{r}
+# Method 1: Basic UpSet Plot from Gene Lists
+# =========================================
+
+# Step 1: Create your gene lists (example from your code)
+upset_list <- list()
+
+# Example: DEGs for different drug treatments
+upset_list[["CRISPRA_Deg"]] <- CRISPRA_Deg$gene_id
+upset_list[["CRISPRI_Deg"]] <- CRISPRI_Deg$gene_id
+upset_list[["CRISPRA_Decipher"]] <- CRISPRA_decipher$gene_id
+upset_list[["CRISPRI_Decipher"]] <- CRISPRA_decipher$gene_id
+upset_list[["CRISPRA_Mrvi"]] <- CRISPRA_mrvi$kinase
+upset_list[["CRISPRI_Mrvi"]] <- CRISPRI_mrvi$kinase
+
+upset_list[["CRISPRA_MHCI"]] <- mhc1_genes_a
+upset_list[["CRISPRI_MHCI"]] <- mhc1_genes_i
+upset_list[["CRISPRA_MHCII"]] <- mhc2_genes_a
+upset_list[["CRISPRI_MHCII"]] <- mhc2_genes_i
+upset_list[["CRISPRA_TDRG"]] <- tcell_genes_a
+upset_list[["CRISPRI_TDRG"]] <- tcell_genes_i
+upset_list[["CRISPRA_TFNG"]] <- tfng_genes_a
+upset_list[["CRISPRI_TFNG"]] <- tfng_genes_i
+upset_list[["CRISPRA_NFKB"]] <- nfkb_genes_a
+upset_list[["CRISPRI_NFKB"]] <- nfkb_genes_i
+
+
+# Step 2: Create combination matrix
+intersection <- ComplexHeatmap::make_comb_mat(upset_list, mode = "distinct")
+
+# Step 3: Create basic UpSet plot
+upset_plot <- ComplexHeatmap::UpSet(intersection)
+upset_plot
+
+# PNG (most common)
+png("plot.png", width = 10, height = 5, units = "in", res = 600)
+ComplexHeatmap::draw(upset_plot)
+dev.off()
+
+# PDF (vector, scalable)
+pdf("plot.pdf", width = 10, height = 5,)
+ComplexHeatmap::draw(upset_plot)
+dev.off()
+
+# SVG (web-friendly vector)
+svg("plot.svg", width = 10, height = 5,)
+ComplexHeatmap::draw(upset_plot)
+dev.off()
+```
+
+```{r}
+# Combine all genes from all sets
+all_genes <- unlist(upset_list)
+
+# Count how many times each gene appears
+gene_counts <- table(all_genes)
+
+# Get genes that appear more than once
+multiple_genes <- gene_counts[gene_counts > 0]
+
+# Sort by frequency (most common first)
+multiple_genes_sorted <- sort(multiple_genes, decreasing = TRUE)
+
+print("Genes appearing multiple times:")
+print(multiple_genes_sorted)
+```
+``````{r}
+library(ggplot2)
+
+# Define your kinases of interest
+kinases_of_interest <- c("MAP3K4", "PDGFRA", "EPHA2", "STK16", "BMP2K", "MINK1", "IRAK4", "NTRK3", "CDK4", "TTK")
+
+# Convert to dataframe
+kinase_freq_df <- data.frame(
+  kinase = names(multiple_genes_sorted),
+  frequency = as.numeric(multiple_genes_sorted)
+) %>%
+  mutate(label_kinase = ifelse(kinase %in% kinases_of_interest, kinase, ""))
+
+# Count kinases by frequency
+freq_counts <- kinase_freq_df %>% count(frequency, name = "count_kinases")
+
+# Create bar plot with selective labeling
+ggplot(freq_counts, aes(x = factor(frequency), y = count_kinases)) +
+  geom_col(fill = "steelblue", alpha = 0.8) +
+  geom_text(aes(label = count_kinases), vjust = -0.3, size = 4) +
+  # Only label kinases of interest
+  geom_text(data = kinase_freq_df %>% filter(kinase %in% kinases_of_interest),
+            aes(x = factor(frequency), y = -0.2, label = kinase),
+            angle = 45, hjust = 1, size = 3, color = "red") +
+  labs(title = "Kinase Frequency Distribution",
+       x = "Frequency (Number of Sets)",
+       y = "Count of Kinases") +
+  theme_minimal() +
+  ylim(-1, max(freq_counts$count_kinases) * 1.1)
+ggsave("/home/user/Documents/Kinase_project/20250206novogen_CRISPRA_run5_correct/kinase_frequency_plot.png", width = 8, height = 6, dpi = 300)
+```
+
+```{r}
+# First, let's check what kinases of interest we have and their frequencies
+print("Checking kinases of interest:")
+kinases_to_label <- kinase_freq_df %>% 
+  filter(kinase %in% kinases_of_interest)
+print(kinases_to_label)
+
+# Create labels for bars
+kinase_labels_on_bars <- kinase_freq_df %>%
+  filter(kinase %in% kinases_of_interest) %>%
+  group_by(frequency) %>%
+  summarise(labels = paste(kinase, collapse = "\n"), .groups = 'drop') %>%
+  left_join(freq_counts, by = "frequency")
+
+# Plot with labels ON the bars
+ggplot(freq_counts, aes(x = factor(frequency), y = count_kinases)) +
+  geom_col(fill = "steelblue", alpha = 0.8) +
+  geom_text(aes(label = count_kinases), vjust = -0.3, size = 4) +
+  # Add kinase labels IN THE MIDDLE of bars
+  geom_text(data = kinase_labels_on_bars,
+            aes(x = factor(frequency), y = count_kinases/2, label = labels),
+            color = "black", size = 3.5, fontface = "bold") +
+  labs(title = "Kinase Frequency Distribution",
+       x = "Frequency (Number of Sets)",
+       y = "Count of Kinases") +
+  theme_minimal()
+
+ggsave("/home/user/Documents/Kinase_project/20250206novogen_CRISPRA_run5_correct/kinase_frequency_plot.png", width = 5, height = 4, dpi = 300)
+```
