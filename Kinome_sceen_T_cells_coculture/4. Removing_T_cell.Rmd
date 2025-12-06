@@ -30,18 +30,30 @@ library(ggpubr)
 ```
 
 ```{r}
-source("/burg/iicd/users/qc2358/Kinase_project/github_repos/sci-plex/bin/cell_cycle.R")
-source("/burg/iicd/users/qc2358/Kinase_project/github_repos/sci-plex/bin/dispersions_functions.R")
-cc.genes <- readRDS("/burg/iicd/users/qc2358/Kinase_project/github_repos/sci-plex/bin/cc.genes.RDS")
+source("/home/user/Documents/github_repos/sci-plex/bin/cell_cycle.R")
+source("/home/user/Documents/github_repos/sci-plex/bin/dispersions_functions.R")
+cc.genes <- readRDS("/home/user/Documents/github_repos/sci-plex/bin/cc.genes.RDS")
 ```
 
 ```{r}
-base_dir <- "/burg/iicd/users/qc2358/Kinase_project"
+
+#pert_type <-"crispri" 
+
+pert_type <- "crispra"
+
+base_dir <- paste0("/home/user/Documents/Kinase_project/", pert_type, "_final/")
 setwd(base_dir)
 
-output_folder <- "CRISPRI_Figures/Tcell_removal"
+output_folder <- paste0(toupper(pert_type), "_Figures/Tcell_removal")
 
-cds_folder <- "11-final-output/CDS_crop_hash_FINAL_CRISPR_GBM_T_cells_500_cutoff_after_qc.RDS"
+# make the dir if it doesn't exist
+if (!dir.exists(output_folder)) {
+  dir.create(output_folder, recursive = TRUE)
+} 
+
+# Output path for QC images
+output_path <- file.path(base_dir, output_folder)
+cds_folder <- "11-final-output/CDS_crop_hash_FINAL_CRISPR_GBM_T_cells_500_cutoff_after_qc.rds"
 cds_path <- file.path(base_dir, cds_folder)
 cds <- readRDS(cds_path)
 ```
@@ -69,12 +81,20 @@ colData(cds) %>%
 ```
 
 ```{r}
-colData(cds)$replicate <- sapply(colData(cds)$oligo, function(x) {
-  split_str <- strsplit(x, "_")[[1]]
-  split_str[2]
+# Remove suffixes from oligo column if they exist
+colData(cds)$oligo_cleaned <- colData(cds)$oligo %>%
+  gsub("_ns", "", .) %>%
+  gsub("_dry", "", .)
+
+# Extract replicate (2nd element after splitting by "_")
+colData(cds)$replicate <- sapply(colData(cds)$oligo_cleaned, function(x) {
+  strsplit(x, "_")[[1]][2]
 })
-colData(cds)$replicate <- gsub("R1", "replicate_1", colData(cds)$replicate)
-colData(cds)$replicate <- gsub("R2", "replicate_2", colData(cds)$replicate)
+
+# Convert R1/R2 to descriptive names
+colData(cds)$replicate <- colData(cds)$replicate %>%
+  gsub("R1", "replicate_1", .) %>%
+  gsub("R2", "replicate_2", .)
 ```
 
 ```{r}
@@ -191,11 +211,23 @@ plot <- plot_cells(cds,
   show_trajectory_graph = FALSE
 )
 ggsave(file.path(output_folder, "CD8A_CD3D_plot.png"), plot)
+
+
+plot <- plot_cells(cds,
+  color_cells_by = "dose",
+  show_trajectory_graph = FALSE
+)
+ggsave(file.path(output_folder, "Dose_plot.png"), plot)
 ```
 
 # 5. Filter out T cells
 ```{r}
-cds <- cds[, colData(cds)$PCA_Cluster %in% c("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14")]
+
+if (pert_type == "crispri") {
+  cds <- cds[, colData(cds)$PCA_Cluster %in% c("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "15")]
+} else if (pert_type == "crispra") {
+  cds <- cds[, colData(cds)$PCA_Cluster %in% c("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16","17","18","19","20","21","22","24","25")]
+}
 ```
 
 ```{r}
@@ -210,4 +242,8 @@ ggsave(file.path(output_folder, "PCA_Cluster_plot_without_Tcells.png"), plot)
 
 ```{r}
 saveRDS(cds, "preprocessed_cds_without_Tcells.rds")
+```
+
+```{r}
+
 ```
