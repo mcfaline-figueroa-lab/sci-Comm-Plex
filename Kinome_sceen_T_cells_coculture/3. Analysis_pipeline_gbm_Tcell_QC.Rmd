@@ -28,13 +28,13 @@ library(UpSetR)
 ```
 
 ```{r}
-source("/burg/iicd/users/qc2358/Kinase_project/github_repos/sci-plex/bin/cell_cycle.R")
-source("/burg/iicd/users/qc2358/Kinase_project/github_repos/sci-plex/bin/dispersions_functions.R")
-cc.genes <- readRDS("/burg/iicd/users/qc2358/Kinase_project/github_repos/sci-plex/bin/cc.genes.RDS")
+source("/home/user/Documents/github_repos/sci-plex/bin/cell_cycle.R")
+source("/home/user/Documents/github_repos/sci-plex/bin/dispersions_functions.R")
+cc.genes <- readRDS("/home/user/Documents/github_repos/sci-plex/bin/cc.genes.RDS")
 ```
 
 ```{r}
-protein_to_gene_map <- readRDS("/burg/iicd/users/qc2358/Kinase_project/github_repos/sci-Plex-GxE/Kinome_GxE_screen/KinMap_kinase_protein_to_gene_map.rds")
+protein_to_gene_map <- readRDS("/home/user/Documents/github_repos/sci-Plex-GxE/Kinome_GxE_screen/KinMap_kinase_protein_to_gene_map.rds")
 ```
 
 # 1. Functions for comparing knockdown effect
@@ -294,9 +294,19 @@ calculate_mean_target_knockdown <- function(cds, gene_short_name_list, protein_t
 
 # 2. Load in the data
 ```{r}
-output_folder <- "CRISPRI_Figures"
-base_dir <- "/burg/iicd/users/qc2358/Kinase_project"
+
+
+#pert_type <-"crispri" 
+
+pert_type <- "crispra"
+
+base_dir <- paste0("/home/user/Documents/Kinase_project/", pert_type, "_final/")
 setwd(base_dir)
+
+output_folder <- paste0(toupper(pert_type), "_Figures")
+
+# Output path for QC images
+output_path <- file.path(base_dir, output_folder)
 
 cds_folder <- "11-final-output/CDS_crop_hash_FINAL_CRISPR_GBM_T_cells_500_cutoff.rds"
 cds_path <- file.path(base_dir, cds_folder)
@@ -814,4 +824,8 @@ ggsave(file.path(qc_path, "Median_knockdown_levels_by_0.3g_5_cutoff_Figure.png")
 # 5. Save the CDS
 ```{r}
 saveRDS(cds, file.path(base_dir, "/11-final-output/CDS_crop_hash_FINAL_CRISPR_GBM_T_cells_500_cutoff_after_qc.rds"))
+```
+
+```{r}
+
 ```
