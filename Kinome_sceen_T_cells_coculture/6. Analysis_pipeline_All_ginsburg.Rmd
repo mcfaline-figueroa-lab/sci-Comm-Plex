@@ -1,0 +1,1216 @@
+---
+title: "6. Analysis_pipeline_All"
+output: html_document
+date: "2025-05-20"
+---
+
+```{r}
+module load R/4.1.0
+module load gdal/3.3.0
+module load geos
+```
+
+# 0. Setup and Library Imports
+```{r}
+rm(list = ls())
+gc()
+```
+
+```{r}
+#install.packages("ggpubr")
+```
+
+```{r}
+library(devtools)
+library(plyr)
+library(dplyr)
+library(monocle3)
+library(ggplot2)
+library(ggridges)
+library(ggrepel)
+#library(ggpubr)
+library(gridExtra)
+library(pheatmap)
+library(tibble)
+library(tidyr)
+library(parallel)
+library(DelayedArray)
+library(Matrix)
+library(magrittr)
+library(purrr)
+library(furrr)
+library(future)
+library(progressr)
+library(cli)
+```
+
+
+```{r}
+source("/burg/cgl/users/ls3456_v2/github_repos//sci-plex/bin/cell_cycle.R")
+source("/burg/cgl/users/ls3456_v2/github_repos//sci-plex/bin/dispersions_functions.R")
+cc.genes = readRDS("/burg/cgl/users/ls3456_v2/github_repos//sci-plex/bin/cc.genes.RDS")
+```
+
+```{r}
+# Define the number of cores to use for parallel processing
+n_cores <- 16
+message(paste("Using", n_cores, "cores for parallel processing."))
+# Adjust this value based on your system memory and needs.
+options(future.globals.maxSize = 6 * 1024^3) # 6GB
+
+handlers(handler_progress(
+  format = ":spin [:bar] :current/:total (:percent) | ETA: :eta | Processing: :message",
+  clear = FALSE
+))
+# Set up the parallel plan
+plan(multisession, workers = n_cores)
+```
+
+```{r}
+
+#pert_type <-"crispri" 
+
+pert_type <- "crispra"
+
+base_dir <- paste0("/burg/cgl/users/ls3456_v2/GBM_Tcells_CRISPRA/", pert_type, "_final/")
+setwd(base_dir)
+
+output_folder <- paste0(toupper(pert_type), "_Figures/")
+
+
+
+# Output path for QC images
+output_path <- file.path(base_dir, output_folder)
+# make the dir if it doesn't exist
+if (!dir.exists(output_path)) {
+  dir.create(output_path, recursive = TRUE)
+}
+
+cds_folder <- "preprocessed_cds_without_Tcells.rds"
+cds_path <- file.path(base_dir, cds_folder)
+cds <- readRDS(cds_path)
+cds <- cds[, !is.na(colData(cds)$top_sg)]
+dim(cds) # 58347 166061
+```
+```{r}
+# Tcell_dose_response_diff_test = readRDS("/home/user/Documents/Kinase_project/crispra_final/CRISPRA_Figures/NTC_analysis/DEG_testing/NTC_CRISPR_dose_response_diff_test_replicates.rds")
+
+# volcano_data <- Tcell_dose_response_diff_test %>%
+#   filter(grepl("dose", term))
+
+# # Identify high-value points for labeling
+# high_value_points <- volcano_data %>%
+#   filter(q_value < 0.001 & abs(normalized_effect) > 1) # Adjust the thresholds as needed
+
+# Tcell_dose_genes <- high_value_points$gene_short_name
+# Tcell_dose_genes
+```
+```{r}
+# # use his function # todo
+# calculate_aggregate_expression_score <- function(cds, signature_genes, from_id = FALSE){
+  
+#   if(from_id == TRUE){
+#     cds_subset = cds[rowData(cds)$id %in% signature_genes,]
+#   }
+#   else(cds_subset = cds[rowData(cds)$gene_short_name %in% signature_genes,])
+#   aggregate_signature_expression = exprs(cds_subset)
+#   aggregate_signature_expression = t(t(aggregate_signature_expression) / pData(cds_subset)$Size_Factor)
+#   aggregate_signature_expression = Matrix::colSums(aggregate_signature_expression)
+#   signature_score = log(aggregate_signature_expression+1)
+#   return(signature_score)
+# }
+# colData(cds)$Tcell_dose_response_score <- calculate_aggregate_expression_score(cds, signature_genes = Tcell_dose_genes)
+
+```
+
+```{r}
+# # only select NTC and PDGRFA cells from gene_id
+# PDGFRA_cds <- cds[, colData(cds)$gene_id %in% c("NTC","PDGFRA")]
+# # in the highest treatment condition
+# PDGFRA_cds <- PDGFRA_cds[, colData(PDGFRA_cds)$dose == 0]
+# dim(PDGFRA_cds)
+
+```
+```{r}
+# # Visualize the difference on the Tcell_dose_response_score between NTC and PDGFRA
+# library(ggplot2)
+# # Alternative: Violin plot with jittered points
+# violin_plot <- ggplot(as.data.frame(colData(PDGFRA_cds)), 
+#                       aes(x = gene_id, y = Tcell_dose_response_score, fill = gene_id)) +
+#   geom_violin(alpha = 0.6) +
+#   geom_jitter(width = 0.2, size = 0.5, alpha = 0.4) +
+#   stat_compare_means(method = "t.test", label = "p.format") +
+#   labs(x = "gene_id", 
+#        y = "TTcell_dose_response_score", 
+#        title = "TTcell_dose_response_score: NTC vs PDGFRA") +
+#   theme_minimal() +
+#   scale_fill_manual(values = c("NTC" = "lightblue", "PDGFRA" = "lightgreen"))
+
+# print(violin_plot)
+
+# ggsave("DEG_testing/Tcell_dose_response_NTC_vs_PDGFRA_violin.png", 
+#        plot = violin_plot, 
+#        width = 6, 
+#        height = 5, 
+#        dpi = 300)
+
+# # Print summary statistics
+# summary_stats <- as.data.frame(colData(PDGFRA_cds)) %>%
+#   group_by(gene_id) %>%
+#   summarise(
+#     mean = mean(Tcell_dose_response_score, na.rm = TRUE),
+#     median = median(Tcell_dose_response_score, na.rm = TRUE),
+#     sd = sd(Tcell_dose_response_score, na.rm = TRUE),
+#     n = n()
+#   )
+
+# print("Summary Statistics:")
+# print(summary_stats)
+
+# # Perform t-test
+# t_test_result <- t.test(Tcell_dose_response_score ~ gene_id, 
+#                         data = as.data.frame(colData(PDGFRA_cds)))
+# print("T-test Results:")
+# print(t_test_result)
+```
+
+# 1. UMAP Visualization
+```{r}
+expressed_genes <- row.names(fData(cds)[Matrix::rowSums(exprs(cds) > 0) > 500, ])
+
+dispersions_test <- estimateDispersionsForCellDataSet(cds,
+  min_cells_detected = 1000,
+  removeOutliers = FALSE
+)
+
+disp_table <- dispersionTable(dispersions_test)
+
+disp_table <- disp_table %>%
+  mutate(excess_disp = (dispersion_empirical - dispersion_fit) / dispersion_fit)
+
+unsup_clustering_genes <- disp_table %>%
+  dplyr::arrange(plyr::desc(excess_disp)) %>%
+  dplyr::slice(1:2000) %>%
+  pull(gene_id)
+
+print(length(unique(unsup_clustering_genes)))
+```
+
+```{r}
+cds <- preprocess_cds(cds,
+  num_dim = 15,
+  use_genes = unsup_clustering_genes
+)
+
+cds <- reduce_dimension(cds,
+  umap.n_neighbors = 20L,
+  umap.min_dist = 0.1,
+  max_components = 2,
+  # preprocess_method = "PCA",
+  umap.fast_sgd = FALSE,
+  cores = 1
+)
+
+colData(cds)$UMAP1 <- reducedDims(cds)[["UMAP"]][, 1]
+colData(cds)$UMAP2 <- reducedDims(cds)[["UMAP"]][, 2]
+```
+
+```{r}
+cds <- cluster_cells(cds, reduction_method = "PCA", resolution = 2e-4, random_seed = 2016L, num_iter = 1)
+colData(cds)$PCA_Cluster <- clusters(cds, reduction_method = "PCA")
+length(unique(colData(cds)$PCA_Cluster))
+```
+
+```{r}
+# if the directory does not exist
+if (!dir.exists(file.path(output_path, "UMAPs"))) {
+  dir.create(file.path(output_path, "UMAPs"), recursive = TRUE)
+}
+
+plot_cells(cds, color_cells_by = "PCA_Cluster") +
+  theme(
+    legend.position = "right",
+    legend.key.width = unit(0.2, "line"),
+    legend.key.height = unit(0.2, "line")
+  )
+ggsave(file.path(output_path, "UMAPs/UMAP_PCA_cluster.png"), width = 4, height = 4, dpi = 300)
+
+plot_cells(cds, color_cells_by = "dose") +
+  theme(
+    legend.position = "right",
+    legend.key.width = unit(0.2, "line"),
+    legend.key.height = unit(0.2, "line")
+  )
+ggsave(file.path(output_path, "UMAPs/UMAP_dose.png"), width = 4, height = 4, dpi = 300)
+
+# Figure 2A
+colData(cds)$dosage <- as.character(colData(cds)$dose)
+dosage_colors <- c("0" = "#023047", "0.25" = "#219ebc", "0.5" = "#ffd166", "1" = "#ff7f11")
+plot_cells(cds, color_cells_by = "dosage") +
+  scale_color_manual(values = dosage_colors) +
+  theme_void() +
+  theme(
+    legend.position = "right",
+    legend.key.width = unit(0.2, "line"),
+    legend.key.height = unit(0.2, "line")
+  )
+ggsave(file.path(output_path, "UMAPs/UMAP_dosage.png"), width = 4, height = 4, dpi = 300)
+ggsave(file.path(output_path, "UMAPs/UMAP_dosage.pdf"), width = 4, height = 4)
+```
+
+```{r}
+# Figure 2B
+plot_cells(cds,
+  genes = c("SOD2", "CSF3", "CD274", "IDO1"),
+  show_trajectory_graph = FALSE
+) +
+  viridis::scale_color_viridis(option = "magma") +
+  theme(
+    legend.position = "right",
+    legend.key.width = unit(0.4, "line"),
+    legend.key.height = unit(1, "line")
+  )
+ggsave(file.path(output_path, "UMAPs/UMAP_SOD2_CSF3.png"), width = 4, height = 4, dpi = 300)
+ggsave(file.path(output_path, "UMAPs/UMAP_SOD2_CSF3.pdf"), width = 4, height = 4)
+```
+
+```{r}
+# Ephrin genes
+Ephrin_RTK_genes <- c("EPHB1", "EPHB2", "EPHB3", "EPHB4", "EPHB5", "EPHB6", "EPHA1", "EPHA2", "EPHA3", "EPHA4", "EPHA5", "EPHA6", "EPHA7", "EPHA8")
+
+plot_cells(cds,
+  genes = Ephrin_RTK_genes,
+  show_trajectory_graph = FALSE
+) +
+  viridis::scale_color_viridis(option = "magma") +
+  theme(
+    legend.position = "right",
+    legend.key.width = unit(0.4, "line"),
+    legend.key.height = unit(1, "line")
+  )
+
+ggsave(file.path(output_path, "UMAPs/UMAP_Ephrin_RTK.png"), width = 8, height = 8, dpi = 300)
+```
+
+```{r}
+Ephrin_genes <- c("EFNA1", "EFNA2", "EFNA3", "EFNA4", "EFNA5", "EFNA6", "EFNB1", "EFNB2", "EFNB3")
+
+plot_cells(cds,
+  genes = Ephrin_genes,
+  show_trajectory_graph = FALSE
+) +
+  viridis::scale_color_viridis(option = "magma") +
+  theme(
+    legend.position = "right",
+    legend.key.width = unit(0.4, "line"),
+    legend.key.height = unit(1, "line")
+  )
+ggsave(file.path(output_path, "UMAPs/UMAP_Ephrin.png"), width = 8, height = 8, dpi = 300)
+```
+
+
+```{r}
+saveRDS(cds, "cds_2000.rds")
+# Use rdsToH5ad.R pipeline to convert rds to h5ad
+```
+
+# 2. Genes associated with APM-MHC interaction
+## 2.1 Calculate aggregate expression score for MHCI and MHCII genes
+```{r}
+cds <- readRDS("cds_2000.rds")
+dim(cds)
+```
+```{r}
+Tcell_dose_response_diff_test = readRDS("/burg/cgl/users/ls3456_v2/GBM_Tcells_CRISPRA/crispra_final/CRISPRA_Figures/NTC_analysis/DEG_testing/NTC_CRISPR_dose_response_diff_test_replicates.rds")
+```
+
+```{r}
+Tcell_dose_response_diff_test <- Tcell_dose_response_diff_test %>%
+  filter(!is.na(p_value)) %>%
+  mutate(q_value = p.adjust(p_value, method = "BH"))
+```
+
+```{r}
+Tcell_dose_response_diff_test_top_deg <- Tcell_dose_response_diff_test[Tcell_dose_response_diff_test$q_value < 0.05 & 
+                                               Tcell_dose_response_diff_test$term == 'dose', ]
+
+
+Tcell_dose_response_diff_test_top_deg$gene_short_name
+```
+
+```{r}
+APM_MHC_CI_genes <- c("PSMB5",
+                      "PSMB6",
+                      "PSMB7",
+                      "PSMB8",
+                      "PSMB9",
+                      "PSMB10",
+                      "TAP1",
+                      "TAP2",
+                      "ERAP1",
+                      "ERAP2",
+                      "CANX",
+                      "CALR",
+                      "PDIA3",
+                      "TAPBP",
+                      "B2M",
+                      "HLA-A",
+                      "HLA-B",
+                      "HLA-C")
+
+APM_MHC_CII_genes <- c("CIITA", 
+                       "HLA-DRA", 
+                       "HLA-DRB1", 
+                       "HLA-DRB5", 
+                       "HLA-DRB6", 
+                       "HLA-DQA1", 
+                       "HLA-DQB1", 
+                       "HLA-DPA1", 
+                       "HLA-DMA", 
+                       "HLA-DMB", 
+                       "HLA-DOA")
+
+IFNG <- c(
+  "ADAR", "APOL6", "ARID5B", "ARL4A", "AUTS2", "B2M", "BANK1", "BATF2", "BPGM", "BST2", "BTG1", "C1R", "C1S",
+  "CASP1", "CASP3", "CASP4", "CASP7", "CASP8", "CCL2", "CCL5", "CCL7", "CD274", "CD38", "CD40", "CD69", "CD74",
+  "CD86", "CDKN1A", "CFB", "CFH", "CIITA", "CMKLR1", "CMPK2", "CSF2RB", "CXCL10", "CXCL11", "CXCL9", "DDX58",
+  "DDX60", "DHX58", "EIF2AK2", "EIF4E3", "EPSTI1", "FAS", "FCGR1A", "FGL2", "FPR1", "FTSJD2", "GBP4", "GBP6",
+  "GCH1", "GPR18", "GZMA", "HERC6", "HIF1A", "HLA-A", "HLA-B", "HLA-DMA", "HLA-DQA1", "HLA-DRB1", "HLA-G",
+  "ICAM1", "IDO1", "IFI27", "IFI30", "IFI35", "IFI44", "IFI44L", "IFIH1", "IFIT1", "IFIT2", "IFIT3", "IFITM2",
+  "IFITM3", "IFNAR2", "IL10RA", "IL15", "IL15RA", "IL18BP", "IL2RB", "IL4R", "IL6", "IL7", "IRF1", "IRF2", "IRF4",
+  "IRF5", "IRF7", "IRF8", "IRF9", "ISG15", "ISG20", "ISOC1", "ITGB7", "JAK2", "KLRK1", "LAP3", "LATS2", "LCP2",
+  "LGALS3BP", "LY6E", "LYSMD2", "MARCH1", "METTL7B", "MT2A", "MTHFD2", "MVP", "MX1", "MX2", "MYD88", "NAMPT",
+  "NCOA3", "NFKB1", "NFKBIA", "NLRC5", "NMI", "NOD1", "NUP93", "OAS2", "OAS3", "OASL", "OGFR", "P2RY14", "PARP12",
+  "PARP14", "PDE4B", "PELI1", "PFKP", "PIM1", "PLA2G4A", "PLSCR1", "PML", "PNP", "PNPT1", "PRIC285", "PSMA2",
+  "PSMA3", "PSMB10", "PSMB2", "PSMB8", "PSMB9", "PSME1", "PSME2", "PTGS2", "PTPN1", "PTPN2", "PTPN6", "RAPGEF6",
+  "RBCK1", "RIPK1", "RIPK2", "RNF213", "RNF31", "RSAD2", "RTP4", "SAMD9L", "SAMHD1", "SECTM1", "SELP", "SERPING1",
+  "SLAMF7", "SLC25A28", "SOCS1", "SOCS3", "SOD2", "SP110", "SPPL2A", "SRI", "SSPN", "ST3GAL5", "ST8SIA4", "STAT1",
+  "STAT2", "STAT3", "STAT4", "TAP1", "TAPBP", "TDRD7", "TNFAIP2", "TNFAIP3", "TNFAIP6", "TNFSF10", "TOR1B",
+  "TRAFD1", "TRIM14", "TRIM21", "TRIM25", "TRIM26", "TXNIP", "UBE2L6", "UPP1", "USP18", "VAMP5", "VAMP8",
+  "VCAM1", "WARS", "XAF1", "XCL1", "ZBP1", "ZNFX1"
+)
+
+NFKB <- c(
+  "ABCA1", "AREG", "ATF3", "ATP2B1", "B4GALT1", "B4GALT5", "BCL2A1", "BCL3", "BCL6", "BHLHE40", "BIRC2", "BIRC3",
+  "BMP2", "BTG1", "BTG2", "BTG3", "CCL2", "CCL20", "CCL4", "CCL5", "CCND1", "CCNL1", "CCRL2", "CD44", "CD69",
+  "CD80", "CD83", "CDKN1A", "CEBPB", "CEBPD", "CFLAR", "CLCF1", "CSF1", "CSF2", "CXCL1", "CXCL10", "CXCL11",
+  "CXCL2", "CXCL3", "CXCL6", "ACKR3", "CCN1", "RIGI", "DENND5A", "DNAJB4", "DRAM1", "DUSP1", "DUSP2", "DUSP4",
+  "DUSP5", "EDN1", "EFNA1", "EGR1", "EGR2", "EGR3", "EHD1", "EIF1", "ETS2", "F2RL1", "F3", "FJX1", "FOS", "FOSB",
+  "FOSL1", "FOSL2", "FUT4", "G0S2", "GADD45A", "GADD45B", "GCH1", "GEM", "GFPT2", "GPR183", "HBEGF", "HES1",
+  "ICAM1", "ICOSLG", "ID2", "IER2", "IER3", "IER5", "IFIH1", "IFIT2", "IFNGR2", "IL12B", "IL15RA", "IL18", "IL1A",
+  "IL1B", "IL23A", "IL6", "IL6ST", "IL7R", "INHBA", "IRF1", "IRS2", "JAG1", "JUN", "JUNB", "KDM6B", "KLF10",
+  "KLF2", "KLF4", "KLF6", "KLF9", "KYNU", "LAMB3", "LDLR", "LIF", "LITAF", "MAFF", "MAP2K3", "MAP3K8", "MARCKS",
+  "MCL1", "MSC", "MXD1", "MYC", "NAMPT", "NFAT5", "NFE2L2", "NFIL3", "NFKB1", "NFKB2", "NFKBIA", "NFKBIE",
+  "NINJ1", "NR4A1", "NR4A2", "NR4A3", "OLR1", "PANX1", "PDE4B", "PDLIM5", "PER1", "PFKFB3", "PHLDA1", "PHLDA2",
+  "PLAU", "PLAUR", "PLEK", "PLK2", "PMEPA1", "PNRC1", "PLPP3", "PPP1R15A", "PTGER4", "PTGS2", "PTPRE", "PTX3",
+  "RCAN1", "REL", "RELA", "RELB", "RHOB", "RIPK2", "RNF19B", "SAT1", "SDC4", "SERPINB2", "SERPINB8", "SERPINE1",
+  "SGK1", "SIK1", "SLC16A6", "SLC2A3", "SLC2A6", "SMAD3", "SNN", "SOCS3", "SOD2", "SPHK1", "SPSB1", "SQSTM1",
+  "STAT5A", "TANK", "TAP1", "TGIF1", "TIPARP", "TLR2", "TNC", "TNF", "TNFAIP2", "TNFAIP3", "TNFAIP6", "TNFAIP8",
+  "TNFRSF9", "TNFSF9", "TNIP1", "TNIP2", "TRAF1", "TRIB1", "TRIP10", "TSC22D1", "TUBB2A", "VEGFA", "YRDC",
+  "ZBTB10", "ZC3H12A", "ZFP36"
+)
+
+
+
+
+calculate_aggregate_expression_score <- function(cds, signature_genes, from_id = FALSE){
+  
+  if(from_id == TRUE){
+    cds_subset = cds[rowData(cds)$id %in% signature_genes,]
+  }
+  else(cds_subset = cds[rowData(cds)$gene_short_name %in% signature_genes,])
+  aggregate_signature_expression = exprs(cds_subset)
+  aggregate_signature_expression = t(t(aggregate_signature_expression) / pData(cds_subset)$Size_Factor)
+  aggregate_signature_expression = Matrix::colSums(aggregate_signature_expression)
+  signature_score = log(aggregate_signature_expression+1)
+  return(signature_score)
+}
+
+
+colData(cds)$APM_MHC_CI_score <- calculate_aggregate_expression_score(cds, signature_genes = APM_MHC_CI_genes)
+colData(cds)$APM_MHC_CII_score <- calculate_aggregate_expression_score(cds, signature_genes = APM_MHC_CII_genes)
+colData(cds)$Tcell_response <- calculate_aggregate_expression_score(cds, signature_genes = Tcell_dose_response_diff_test_top_deg$gene_short_name)
+colData(cds)$IFNG <- calculate_aggregate_expression_score(cds, signature_genes = IFNG )
+colData(cds)$NFKB <- calculate_aggregate_expression_score(cds, signature_genes = NFKB )
+
+
+```
+
+
+```{r}
+## 2.2 DEG analysis for each kinase in untreated cells
+kinase_perturbation <- colData(cds)$gene_id %>% unique() %>% sort()
+kinase_perturbation <- kinase_perturbation[!(kinase_perturbation %in% c("NTC"))]
+```
+
+```{r}
+gene_set_score_diff_test.list <- list()
+
+  
+for(kinase in kinase_perturbation){
+    
+  gene_set_score_diff_test.list[[kinase]] <- list()
+    
+  for(gene_set in c("APM_MHC_CI_score","APM_MHC_CII_score","Tcell_response","IFNG","NFKB")){
+      
+    score_df_subset <- colData(cds) %>% as.data.frame() %>% filter(gene_id %in% c("NTC",kinase), dose == 0)
+    score_df_subset$gene_id <- factor(score_df_subset$gene_id, levels = c("NTC",kinase))
+      
+    model_to_test <- paste0(gene_set," ~ gene_id+ dose")
+      
+    diff_test_results <- speedglm::speedglm(data = score_df_subset, formula = model_to_test)
+    diff_test_results <- broom::tidy(diff_test_results)
+      
+    gene_set_score_diff_test.list[[kinase]][[gene_set]] <- data.frame(signature = gene_set,
+                                                                      gene_id = kinase,
+                                                                      term = diff_test_results$term,
+                                                                      beta = diff_test_results$estimate,
+                                                                      p_value = diff_test_results$p.value)
+      
+  }
+  message("Finished ", kinase)
+}
+
+saveRDS(gene_set_score_diff_test.list, file.path(output_path, "MHC_genes/gene_set_score_diff_test.list.rds"))
+#gene_set_score_diff_test.list <- readRDS(file.path(output_path,"MHC_genes/gene_set_score_diff_test.list.rds"))
+
+```
+
+```{r}
+gene_set_score_diff_test_results.list <- list()
+
+  
+for(kinase in kinase_perturbation){
+  gene_set_score_diff_test_results.list[[kinase]] <- do.call("rbind", gene_set_score_diff_test.list[[kinase]])
+  }
+
+
+
+gene_set_score_diff_test_results <- do.call("rbind",gene_set_score_diff_test_results.list)
+
+saveRDS(gene_set_score_diff_test_results, file.path(output_path, "MHC_genes/gene_set_score_diff_test_results.rds"))
+
+```
+```{r}
+# gene_set_score_diff_test_results <- readRDS(file.path(output_path, "MHC_genes/gene_set_score_diff_test_results.rds"))
+gene_set_score_diff_test_results$q_value <- p.adjust(gene_set_score_diff_test_results$p_value, method = "BH")
+
+split_data <- split(gene_set_score_diff_test_results, gene_set_score_diff_test_results$signature)
+APM_MHC_CI_score_data <- split_data$APM_MHC_CI_score
+APM_MHC_CII_score_data <- split_data$APM_MHC_CII_score
+```
+
+## 2.3 Volcano plot for kinases influencing MHCI and MHCII gene expression
+```{r}
+# Volcano plot for MHCI
+volcano_data <- APM_MHC_CI_score_data %>%
+  filter(grepl("gene_id", term))
+
+# Identify high-value points for labeling
+high_value_points <- volcano_data %>%
+  filter(q_value < 0.1 & abs(beta) > 0.1) # Adjust the thresholds as needed
+write.csv(high_value_points, file.path(output_path, "MHC_genes/high_value_points_MHCI.csv"), row.names = FALSE)
+
+# Create the volcano plot with labels
+p <- volcano_data %>%
+  ggplot() +
+  geom_point(
+    aes(
+      x = beta,
+      y = -log10(q_value),
+      color = q_value < 0.1 & abs(beta) > 0.1
+    ),
+    size = 0.4, stroke = 0
+  ) +
+  monocle3:::monocle_theme_opts() +
+  geom_hline(yintercept = -log10(0.1), color = "black", linetype = "dotted", size = 0.1) +
+  theme(
+    text = element_text(size = 6),
+    legend.key.width = unit(0.2, "line"),
+    legend.key.height = unit(0.2, "line")
+  ) +
+  xlab("Effect size") +
+  ylab("-log10(p adj)") +
+  scale_color_manual("Pass\nFilter\n(FDR < 0.1 &\n|Beta| > 0.1)", values = c("TRUE" = "red", "FALSE" = "black")) +
+  guides(colour = guide_legend(override.aes = list(size = 2))) +
+  geom_text_repel(
+    data = high_value_points,
+    aes(x = beta, y = -log10(q_value), label = gene_id), # Replace `gene_name` with the column containing gene names
+    size = 1.5, # Adjust the size of the labels
+    max.overlaps = 30,
+    segment.size = 0.1
+  ) # Adjust the number of overlaps allowed
+
+# Save the plot
+ggsave(file.path(output_path, "MHC_genes/Effect_size_MHCI_top_gene_label.png"),
+  plot = p, dpi = 600, width = 2.5, height = 1.75
+)
+ggsave(file.path(output_path, "MHC_genes/Effect_size_MHCI_top_gene_label.pdf"),
+  plot = p, dpi = 600, width = 2.5, height = 1.75
+)
+```
+
+```{r}
+
+# if the directory does not exist
+if (!dir.exists(file.path(output_path, "/MHC_genes/"))) {
+  dir.create(file.path(output_path, "/MHC_genes/"), recursive = TRUE)
+}
+
+# Volcano plot for MHCII
+volcano_data <- APM_MHC_CII_score_data %>%
+  filter(grepl("gene_id", term))
+
+# Identify high-value points for labeling
+high_value_points <- volcano_data %>%
+  filter(q_value < 0.1 & abs(beta) > 0.1) # Adjust the thresholds as needed
+write.csv(high_value_points, file.path(output_path, "MHC_genes/high_value_points_MHCII.csv"), row.names = FALSE)
+
+# Create the volcano plot with labels
+p <- volcano_data %>%
+  ggplot() +
+  geom_point(
+    aes(
+      x = beta,
+      y = -log10(q_value),
+      color = q_value < 0.1 & abs(beta) > 0.1
+    ),
+    size = 0.4, stroke = 0
+  ) +
+  monocle3:::monocle_theme_opts() +
+  geom_hline(yintercept = -log10(0.1), color = "black", linetype = "dotted", size = 0.1) +
+  theme(
+    text = element_text(size = 6),
+    legend.key.width = unit(0.2, "line"),
+    legend.key.height = unit(0.2, "line")
+  ) +
+  xlab("Effect size") +
+  ylab("-log10(p adj)") +
+  scale_color_manual("Pass\nFilter\n(FDR < 1% &\n|Beta| > 0.1)", values = c("TRUE" = "red", "FALSE" = "black")) +
+  guides(colour = guide_legend(override.aes = list(size = 2))) +
+  geom_text_repel(
+    data = high_value_points,
+    aes(x = beta, y = -log10(q_value), label = gene_id), # Replace `gene_name` with the column containing gene names
+    size = 1.5, # Adjust the size of the labels
+    max.overlaps = 30,
+    segment.size = 0.1
+  ) # Adjust the number of overlaps allowed
+
+# Save the plot
+ggsave(file.path(output_path, "MHC_genes/Effect_size_MHCII_top_gene_label.png"),
+  plot = p, dpi = 600, width = 2.5, height = 1.75
+)
+ggsave(file.path(output_path, "MHC_genes/Effect_size_MHCII_top_gene_label.pdf"),
+  plot = p, dpi = 600, width = 2.5, height = 1.75
+)
+```
+
+# 3. Genes associated with T cell dose response
+## 3.1 UMAP of top 30 DEGs
+```{r}
+Tcell_dose_diff_test <- readRDS(file.path("/burg//cgl/users/ls3456_v2/GBM_Tcells_CRISPRA/crispra_final/CRISPRA_Figures/NTC_analysis/DEG_testing/NTC_CRISPR_dose_response_diff_test_replicates.rds"))
+Tcell_dose_diff_test <- Tcell_dose_diff_test %>%
+  filter(!is.na(p_value)) %>%
+  mutate(q_value = p.adjust(p_value, method = "BH"))
+```
+
+```{r}
+Tcell_dose_response_diff_test_top_deg <- Tcell_dose_diff_test[Tcell_dose_diff_test$q_value < 0.05 & Tcell_dose_diff_test$term == "dose", ]
+Tcell_dose_response_diff_test_top_deg <- Tcell_dose_response_diff_test_top_deg[order(Tcell_dose_response_diff_test_top_deg$q_value), ]
+```
+
+```{r}
+top50 <- head(Tcell_dose_response_diff_test_top_deg, 50)
+top_Tcell_dose_gene <- top50[top50$normalized_effect > 1.2, ]
+plot_cells(cds,
+  genes = c(top_Tcell_dose_gene$gene_short_name),
+  show_trajectory_graph = FALSE
+) +
+  viridis::scale_color_viridis(option = "magma") + # Use the viridis "magma" palette
+  theme(
+    legend.position = "right",
+    legend.key.width = unit(0.2, "line"),
+    legend.key.height = unit(0.2, "line")
+  )
+ggsave(file.path(output_path, "UMAPs/UMAP_top_tcell_dose.png"), width = 8, height = 8, dpi = 300)
+```
+
+## 3.2 DEG analysis for each kinase in untreated cells
+```{r}
+kinases <- (unique(colData(cds)$gene_id))
+kinases <- kinases[kinases != "NTC"]
+kinases <- na.omit(kinases)
+```
+
+```{r}
+untreated_kinase_cds <- cds[, !is.na(colData(cds)$dose) & !is.na(colData(cds)$gene_id) & colData(cds)$dose == 0]
+median(table(colData(untreated_kinase_cds)$gene_id)) # 78
+```
+
+```{r}
+cli::cli_h1("DEG analysis for each kinase in untreated cells")
+message("Processing ", length(kinases), " kinases")
+
+# Wrap the parallel computation with with_progress to enable progress reporting
+with_progress({
+  # Create a progressor
+  p <- progressor(steps = length(kinases))
+
+  untreated_genotype_diff_test.list <- furrr::future_map(kinases, function(target) {
+    p(message = sprintf("%s", target))
+    # Create subset for the current target kinase and NTC
+    cds_subset <- untreated_kinase_cds[, colData(untreated_kinase_cds)$gene_id %in% c("NTC", target)]
+    colData(cds_subset)$gene_id <- factor(colData(cds_subset)$gene_id, levels = c("NTC", target))
+
+    expressed_genes <- row.names(fData(cds_subset)[Matrix::rowSums(exprs(cds_subset) > 0) > dim(cds_subset)[2] * 0.05, ])
+    model_fit <- fit_models(cds_subset[expressed_genes, ], model_formula_str = "~gene_id", cores = 1)
+    result_table <- coefficient_table(model_fit) %>%
+      dplyr::select(-model, -model_summary)
+
+    return(result_table)
+  }, .options = furrr_options(seed = TRUE)) # seed = TRUE for reproducibility
+})
+names(untreated_genotype_diff_test.list) <- kinases
+untreated_genotype_diff_test.list <- purrr::compact(untreated_genotype_diff_test.list) # Remove NULL entries
+```
+
+```{r}
+# Unparallelized version
+# untreated_genotype_diff_test.list <- list()
+# for(target in kinases){
+#   cds_subset <- untreated_kinase_cds[,colData(untreated_kinase_cds)$gene_id %in% c("NTC",target)]
+#   colData(cds_subset)$gene_id <- factor(colData(cds_subset)$gene_id, levels = c("NTC",target))
+#   expressed_genes <- row.names(fData(cds_subset)[Matrix::rowSums(exprs(cds_subset) > 0) > dim(cds_subset)[2]*0.05,])
+#   untreated_genotype_diff_test.list[[target]] <- fit_models(cds_subset[expressed_genes,], model_formula_str = "~gene_id")
+#   untreated_genotype_diff_test.list[[target]] <- coefficient_table(untreated_genotype_diff_test.list[[target]]) %>%
+#     dplyr::select(-model,-model_summary)
+
+#   rm(cds_subset)
+#   message("Done with ", target)
+
+# }
+```
+
+```{r}
+# if the directory does not exist
+# if (!dir.exists(file.path(output_path, "/Diff_test/"))) {
+#   dir.create(file.path(output_path, "/Diff_test/"), recursive = TRUE)
+# }
+
+# saveRDS(untreated_genotype_diff_test.list, file.path(output_path, "Diff_test/untreated_genotype_diff_test.list.rds"))
+```
+
+```{r}
+untreated_genotype_diff_test.list<- readRDS(file.path(output_path, "Diff_test/untreated_genotype_diff_test.list.rds"))
+for (target in names(untreated_genotype_diff_test.list)) {
+  untreated_genotype_diff_test.list[[target]]$gene_id <- rep(target, nrow(untreated_genotype_diff_test.list[[target]]))
+}
+
+untreated_genotype_diff_results <- do.call(rbind, untreated_genotype_diff_test.list)
+untreated_genotype_diff_results$q_value <- p.adjust(untreated_genotype_diff_results$p_value, method = "BH")
+```
+
+```{r}
+ggplot(
+  untreated_genotype_diff_results %>% filter(term != "(Intercept)"),
+  aes(x = normalized_effect, y = -log10(q_value), color = q_value < 1e-4)
+) +
+  geom_point(size = 0.5, stroke = 0) +
+  scale_color_manual(values = c("black", "firebrick2")) +
+  facet_wrap(~ gene_id == "originalIDTorder") +
+  monocle3:::monocle_theme_opts()
+ggsave(file.path(output_path, "Diff_test/test.png"))
+```
+
+## 3.3 Generate list of T cell dosage genes controlled by kinases
+```{r}
+Tcell_dose_diff_genes <- Tcell_dose_diff_test %>%
+  filter(term == "dose", q_value < 0.05) %>%
+  pull(id)
+```
+
+```{r}
+untreated_genotype_diff_results %>%
+  filter(
+    term != "(Intercept)",
+    q_value < 0.05,
+    abs(normalized_effect) > 1,
+    gene_id %in% c("random", "originalIDTorder")
+  ) %>%
+  group_by(gene_id) %>%
+  dplyr::summarise(n = n()) %>%
+  arrange(desc(n)) %>%
+  print(n = 100)
+```
+
+```{r}
+untreated_genotype_diff_results %>%
+  filter(term != "(Intercept)", q_value < 0.05, abs(normalized_effect) > 1) %>%
+  group_by(gene_id) %>%
+  dplyr::summarise(n = n()) %>%
+  arrange(desc(n)) %>%
+  print(n = 100)
+```
+
+```{r}
+Tcell_dose_kinase_diff_genes <- untreated_genotype_diff_results %>%
+  filter(term != "(Intercept)", q_value < 1e-4, id %in% Tcell_dose_diff_genes) %>%
+  pull(id) %>%
+  unique()
+
+length(unique(Tcell_dose_diff_genes)) # 1768
+length(Tcell_dose_kinase_diff_genes) # 501
+```
+
+## 3.4 DEG analysis for knockdown effect for each treatment condition
+```{r}
+hashed_cds <- cds[, !is.na(colData(cds)$dose)]
+kinase_cds <- hashed_cds[, !is.na(colData(hashed_cds)$gene_id)]
+```
+
+```{r}
+cli::cli_h1("DEG analysis (T cell dose genes) for each kinase for each treatment condition")
+
+genotype_by_Tcell_dose_diff_test.list <- list()
+
+for (dose in unique(as.character(colData(kinase_cds)$dosage))) {
+  message(paste("Processing dose:", dose))
+  kinase_cds_subset <- kinase_cds[, colData(kinase_cds)$dosage == dose]
+
+  with_progress({
+    p_dose <- progressor(steps = length(kinases))
+
+    # Parallelize the inner loop over kinases for current dose
+    results_for_dose_list <- furrr::future_map(kinases, function(target_kinase) {
+      p_dose(message = sprintf("%s", target_kinase))
+      cds_subset <- kinase_cds_subset[, colData(kinase_cds_subset)$gene_id %in% c("NTC", target_kinase)]
+      colData(cds_subset)$gene_id <- factor(colData(cds_subset)$gene_id, levels = c("NTC", target_kinase))
+
+      model_fit <- fit_models(cds_subset[Tcell_dose_diff_genes, ], model_formula_str = "~gene_id", cores = 1)
+      coef_table <- coefficient_table(model_fit) %>%
+        dplyr::select(-model, -model_summary)
+
+      return(coef_table)
+    }, .options = furrr_options(seed = TRUE))
+
+    names(results_for_dose_list) <- kinases
+    genotype_by_Tcell_dose_diff_test.list[[as.character(dose)]] <- purrr::compact(results_for_dose_list) # Remove NULL entries
+  })
+}
+```
+
+```{r}
+# Unparallelized version
+# colData(kinase_cds)$treatment= colData(kinase_cds)$dosage
+# for(dose in unique(colData(kinase_cds)$treatment)){
+
+#   genotype_by_Tcell_dose_diff_test.list[[dose]] <- list()
+
+#   for(target in kinases){
+#     cds_subset <- kinase_cds[,colData(kinase_cds)$gene_id %in% c("NTC",target) & colData(kinase_cds)$treatment == dose]
+#     colData(cds_subset)$gene_id <- factor(colData(cds_subset)$gene_id, levels = c("NTC",target))
+
+#     genotype_by_Tcell_dose_diff_test.list[[dose]][[target]] <- fit_models(cds_subset[Tcell_dose_diff_genes,],
+#                                                               model_formula_str = "~gene_id")
+#     genotype_by_Tcell_dose_diff_test.list[[dose]][[target]] <- coefficient_table(genotype_by_Tcell_dose_diff_test.list[[dose]][[target]]) %>%
+#       dplyr::select(-model,-model_summary)
+
+#     rm(cds_subset)
+#     message("Done with T cell test for ", dose, " exposed ", target)
+
+#   }
+# }
+```
+
+```{r}
+saveRDS(genotype_by_Tcell_dose_diff_test.list, file.path(output_path, "Diff_test/genotype_by_Tcell_dose_diff_test.list.rds"))
+```
+
+```{r}
+genotype_by_Tcell_dose_diff_test.list <- readRDS(file.path(output_path, "Diff_test/genotype_by_Tcell_dose_diff_test.list.rds"))
+
+for (dose in names(genotype_by_Tcell_dose_diff_test.list)) {
+  for (target in kinases) {
+    genotype_by_Tcell_dose_diff_test.list[[dose]][[target]]$gene_id <- rep(target, nrow(genotype_by_Tcell_dose_diff_test.list[[dose]][[target]]))
+  }
+}
+
+for (dose in names(genotype_by_Tcell_dose_diff_test.list)) {
+  genotype_by_Tcell_dose_diff_test.list[[dose]] <- do.call("rbind", genotype_by_Tcell_dose_diff_test.list[[dose]])
+  genotype_by_Tcell_dose_diff_test.list[[dose]]$treatment <- rep(dose, nrow(genotype_by_Tcell_dose_diff_test.list[[dose]]))
+}
+```
+
+```{r}
+genotype_by_Tcell_dose_diff_test_results <- do.call("rbind", genotype_by_Tcell_dose_diff_test.list)
+
+genotype_by_Tcell_dose_diff_test_results$q_value <- p.adjust(genotype_by_Tcell_dose_diff_test_results$p_value, method = "BH")
+```
+
+```{r}
+ggplot(
+  genotype_by_Tcell_dose_diff_test_results %>% filter(!(term %in% c("(Intercept)"))),
+  aes(x = normalized_effect, y = -log10(q_value), color = q_value < 1e-4 & abs(normalized_effect) > 1)
+) +
+  geom_point(size = 0.5, stroke = 0) +
+  facet_wrap(~treatment) +
+  monocle3:::monocle_theme_opts() +
+  scale_color_manual(values = c("TRUE" = "firebrick2", "FALSE" = "black"))
+ggsave(file.path(output_path, "Diff_test/test_2.png"))
+```
+
+```{r}
+top_tcell_exposure_perturbed_genes <- genotype_by_Tcell_dose_diff_test_results %>%
+  filter(
+    term != "(Intercept)",
+    q_value < 0.05,
+    abs(normalized_effect) > 1
+  ) %>%
+  group_by(id) %>%
+  summarize(n = n()) %>%
+  filter(n >= 50) %>%
+  pull(id) %>%
+  unique()
+```
+
+## 3.5 T cell dose genes for each genotype
+```{r}
+options(future.globals.maxSize = 15 * 1024^3)
+cli::cli_h1("T cell dose genes for each genotype")
+
+with_progress({
+  p_genotype <- progressor(steps = length(kinases))
+
+  Tcell_genotype_diff_test.list <- furrr::future_map(kinases, function(target_kinase) {
+    p_genotype(message = sprintf("%s", target_kinase))
+    cds_subset <- kinase_cds[, colData(kinase_cds)$gene_id %in% c(target_kinase)]
+    expressed_genes <- row.names(fData(cds_subset)[Matrix::rowSums(exprs
+    (cds_subset) > 0) > dim(cds_subset)[2] * 0.05, ])
+
+    model_fit <- fit_models(cds_subset[expressed_genes, ], model_formula_str = "~dose", cores = 1)
+    coef_table <- coefficient_table(model_fit) %>%
+      dplyr::select(-model, -model_summary)
+
+    return(coef_table)
+  }, .options = furrr_options(seed = TRUE))
+
+  names(Tcell_genotype_diff_test.list) <- kinases
+  Tcell_genotype_diff_test.list <- purrr::compact(Tcell_genotype_diff_test.list)
+}) # Remove NULL entries
+```
+
+```{r}
+# Unparallelized version
+# Tcell_genotype_diff_test.list <- list()
+
+# for(target in kinases ){
+# 	cds_subset <- kinase_cds[,colData(kinase_cds)$gene_id %in% c(target)]
+# 	expressed_genes <- row.names(fData(cds_subset)[Matrix::rowSums(exprs(cds_subset) > 0) > dim(cds_subset)[2]*0.05,])
+#    Tcell_genotype_diff_test.list[[target]] <- fit_models(cds_subset[expressed_genes,], model_formula_str = "~dose", cores = 1)
+#    Tcell_genotype_diff_test.list[[target]] <-coefficient_table(Tcell_genotype_diff_test.list[[target]]) %>%
+#     dplyr::select(-model,-model_summary)
+#    rm(cds_subset)
+#    message("Done with T cell test for", target)
+# }
+```
+
+```{r}
+saveRDS(Tcell_genotype_diff_test.list, file.path(output_path, "Diff_test/Tcell_genotype_diff_test.list.rds"))
+```
+
+```{r}
+# Tcell_genotype_diff_test.list <- readRDS("CRISPRI_Figures/Diff_test/Tcell_genotype_diff_test.list.rds")
+for (target in names(Tcell_genotype_diff_test.list)) {
+  Tcell_genotype_diff_test.list[[target]]$gene_id <- rep(target, nrow(Tcell_genotype_diff_test.list[[target]]))
+}
+```
+
+```{r}
+Tcell_genotype_diff_results <- do.call(rbind, Tcell_genotype_diff_test.list)
+Tcell_genotype_diff_results$q_value <- p.adjust(Tcell_genotype_diff_results$p_value, method = "BH")
+```
+
+```{r}
+ggplot(
+  Tcell_genotype_diff_results %>% filter(!(term %in% c("(Intercept)", "log(Tcell_dose + 0.1)"))),
+  aes(x = normalized_effect, y = -log10(q_value), color = q_value < 1e-2 & abs(normalized_effect) > 0.5)
+) +
+  geom_point(size = 0.5, stroke = 0) +
+  facet_wrap(~ gene_id %in% c("random", "originalIDTorder")) +
+  monocle3:::monocle_theme_opts() +
+  scale_color_manual(values = c("TRUE" = "firebrick2", "FALSE" = "black"))
+ggsave(file.path(output_path, "Diff_test/test_3.png"))
+```
+
+# 4. Heatmap of SOD2 and CSF3 modulating kinases
+## 4.1 Genes: SOD2, CSF3, CTSS, NAMPT, TNIP1, CXCL2
+```{r}
+sod2_csf3_modulating_kinases <- genotype_by_Tcell_dose_diff_test_results %>%
+  filter(gene_short_name %in% c("SOD2", "CSF3", "CTSS", "NAMPT", "TNIP1", "CXCL2"), term != "(Intercept)", q_value < 0.05 & abs(normalized_effect) > 1) %>%
+  arrange(desc(abs(normalized_effect))) %>%
+  group_by(gene_short_name) %>%
+  dplyr::slice(1:10) %>%
+  dplyr::select(gene_short_name, normalized_effect, term)
+
+sod2_csf3_modulating_kinases$gene_id <- sapply(sod2_csf3_modulating_kinases$term, function(x) {
+  stringr::str_split(x, pattern = "_id")[[1]][2]
+})
+
+sod2_csf3_modulating_kinases <- sod2_csf3_modulating_kinases %>%
+  dplyr::distinct(gene_short_name, gene_id, .keep_all = TRUE)
+```
+
+```{r}
+
+# if the directory does not exist
+if (!dir.exists(file.path(output_path, "Heatmaps"))) {
+  dir.create(file.path(output_path, "Heatmaps"), recursive = TRUE)
+}
+
+sod2_csf3_modulating_kinases_beta_heatmap <- sod2_csf3_modulating_kinases %>%
+  dplyr::select(gene_short_name, normalized_effect, gene_id) %>%
+  tidyr::spread(key = gene_id, value = normalized_effect) %>%
+  as.data.frame()
+
+row.names(sod2_csf3_modulating_kinases_beta_heatmap) <- sod2_csf3_modulating_kinases_beta_heatmap$gene_short_name
+sod2_csf3_modulating_kinases_beta_heatmap$gene_short_name <- NULL
+
+sod2_csf3_modulating_kinases_beta_heatmap[is.na(sod2_csf3_modulating_kinases_beta_heatmap)] <- 0
+
+hmcols <- colorRampPalette(colors = c("blue", "white", "red"))(35)
+paletteLength <- 35
+
+myBreaks <- c(seq(min(sod2_csf3_modulating_kinases_beta_heatmap), 0, length.out = ceiling(paletteLength / 2) + 1), seq(max(sod2_csf3_modulating_kinases_beta_heatmap) / floor(paletteLength / 2), max(sod2_csf3_modulating_kinases_beta_heatmap), length.out = floor(paletteLength / 2)))
+
+pheatmap::pheatmap(sod2_csf3_modulating_kinases_beta_heatmap,
+  clustering_method = "ward.D2",
+  cluster_rows = F,
+  color = hmcols,
+  breaks = myBreaks,
+  file = file.path(output_path, "Heatmaps/SOD2_CSF3_modulators.png"),
+  fontsize = 9,
+  treeheight_col = 10,
+  height = 3,
+  width = 6
+)
+```
+
+## 4.2 Genes: top T cell exposure genes
+```{r}
+sod2_csf3_modulating_kinases <- genotype_by_Tcell_dose_diff_test_results %>%
+  filter(gene_short_name %in% top_Tcell_dose_gene$gene_short_name, term != "(Intercept)", q_value < 0.05 & abs(normalized_effect) > 1) %>%
+  arrange(desc(abs(normalized_effect))) %>%
+  group_by(gene_short_name) %>%
+  dplyr::slice(1:10) %>%
+  dplyr::select(gene_short_name, normalized_effect, term)
+
+sod2_csf3_modulating_kinases$gene_id <- sapply(sod2_csf3_modulating_kinases$term, function(x) {
+  stringr::str_split(x, pattern = "_id")[[1]][2]
+})
+
+sod2_csf3_modulating_kinases <- sod2_csf3_modulating_kinases %>%
+  dplyr::distinct(gene_short_name, gene_id, .keep_all = TRUE)
+```
+
+```{r}
+sod2_csf3_modulating_kinases_beta_heatmap <- sod2_csf3_modulating_kinases %>%
+  dplyr::select(gene_short_name, normalized_effect, gene_id) %>%
+  tidyr::spread(key = gene_id, value = normalized_effect) %>%
+  as.data.frame()
+
+row.names(sod2_csf3_modulating_kinases_beta_heatmap) <- sod2_csf3_modulating_kinases_beta_heatmap$gene_short_name
+sod2_csf3_modulating_kinases_beta_heatmap$gene_short_name <- NULL
+
+sod2_csf3_modulating_kinases_beta_heatmap[is.na(sod2_csf3_modulating_kinases_beta_heatmap)] <- 0
+
+hmcols <- colorRampPalette(colors = c("blue", "white", "red"))(35)
+paletteLength <- 35
+
+myBreaks <- c(seq(min(sod2_csf3_modulating_kinases_beta_heatmap), 0, length.out = ceiling(paletteLength / 2) + 1), seq(max(sod2_csf3_modulating_kinases_beta_heatmap) / floor(paletteLength / 2), max(sod2_csf3_modulating_kinases_beta_heatmap), length.out = floor(paletteLength / 2)))
+
+pheatmap::pheatmap(sod2_csf3_modulating_kinases_beta_heatmap,
+  clustering_method = "ward.D2",
+  cluster_rows = F,
+  color = hmcols,
+  breaks = myBreaks,
+  file = file.path(output_path, "Heatmaps/SOD2_CSF3_modulators_top_Tcell_dose.png"),
+  fontsize = 9,
+  treeheight_col = 10,
+  height = 3,
+  width = 8
+)
+```
+
+## 4.3 Genes: Pro-inflammatory cytokines
+```{r}
+Pro_inf <- c("IL1A", "IL1B", "IL17A", "IL17F", "IL18", "TNF", "CSF2", "IFNG", "CCL2", "CCL3", "CCL4", "CCL5", "CCL11", "CCL13", "CXCL10", "CXCL8", "IL12A", "IL12B", "IL4", "IL10", "IL13", "IL1RN", "TGFB1", "TGFB2", "TGFB3")
+```
+
+```{r}
+sod2_csf3_modulating_kinases <- genotype_by_Tcell_dose_diff_test_results %>%
+  filter(gene_short_name %in% Pro_inf, term != "(Intercept)", q_value < 0.05 & abs(normalized_effect) > 1) %>%
+  arrange(desc(abs(normalized_effect))) %>%
+  group_by(gene_short_name) %>%
+  dplyr::slice(1:10) %>%
+  dplyr::select(gene_short_name, normalized_effect, term)
+
+sod2_csf3_modulating_kinases$gene_id <- sapply(sod2_csf3_modulating_kinases$term, function(x) {
+  stringr::str_split(x, pattern = "_id")[[1]][2]
+})
+
+sod2_csf3_modulating_kinases <- sod2_csf3_modulating_kinases %>%
+  dplyr::distinct(gene_short_name, gene_id, .keep_all = TRUE)
+```
+
+```{r}
+sod2_csf3_modulating_kinases_beta_heatmap <- sod2_csf3_modulating_kinases %>%
+  dplyr::select(gene_short_name, normalized_effect, gene_id) %>%
+  tidyr::spread(key = gene_id, value = normalized_effect) %>%
+  as.data.frame()
+
+row.names(sod2_csf3_modulating_kinases_beta_heatmap) <- sod2_csf3_modulating_kinases_beta_heatmap$gene_short_name
+sod2_csf3_modulating_kinases_beta_heatmap$gene_short_name <- NULL
+
+sod2_csf3_modulating_kinases_beta_heatmap[is.na(sod2_csf3_modulating_kinases_beta_heatmap)] <- 0
+
+hmcols <- colorRampPalette(colors = c("white", "red"))(18)
+paletteLength <- 18
+myBreaks <- c(seq(0, max(sod2_csf3_modulating_kinases_beta_heatmap), length.out = paletteLength))
+
+pheatmap::pheatmap(sod2_csf3_modulating_kinases_beta_heatmap,
+  clustering_method = "ward.D2",
+  cluster_rows = F,
+  color = hmcols,
+  breaks = myBreaks,
+  file = file.path(output_path, "Heatmaps/Pro_inf_modulators.png"),
+  fontsize = 9,
+  treeheight_col = 10,
+  height = 3,
+  width = 6
+)
+```
+
+## 4.4 Genes: top T cell exposure genes + CD274, IDO1
+```{r}
+sod2_csf3_modulating_kinases <- genotype_by_Tcell_dose_diff_test_results %>%
+  filter(gene_short_name %in% c(top_Tcell_dose_gene$gene_short_name, "CD274", "IDO1"), term != "(Intercept)", q_value < 0.05 & abs(normalized_effect) > 1) %>%
+  arrange(desc(abs(normalized_effect))) %>%
+  group_by(gene_short_name) %>%
+  dplyr::slice(1:10) %>%
+  dplyr::select(gene_short_name, normalized_effect, term)
+
+sod2_csf3_modulating_kinases$gene_id <- sapply(sod2_csf3_modulating_kinases$term, function(x) {
+  stringr::str_split(x, pattern = "_id")[[1]][2]
+})
+
+sod2_csf3_modulating_kinases <- sod2_csf3_modulating_kinases %>%
+  dplyr::distinct(gene_short_name, gene_id, .keep_all = TRUE)
+write.csv(sod2_csf3_modulating_kinases, file.path(output_path, "Heatmaps/SOD2_CSF3_modulators_top_Tcell_dose_CD274_IDO1.csv"), row.names = FALSE)
+```
+
+```{r}
+sod2_csf3_modulating_kinases_beta_heatmap <- sod2_csf3_modulating_kinases %>%
+  dplyr::select(gene_short_name, normalized_effect, gene_id) %>%
+  tidyr::spread(key = gene_id, value = normalized_effect) %>%
+  as.data.frame()
+
+row.names(sod2_csf3_modulating_kinases_beta_heatmap) <- sod2_csf3_modulating_kinases_beta_heatmap$gene_short_name
+sod2_csf3_modulating_kinases_beta_heatmap$gene_short_name <- NULL
+
+sod2_csf3_modulating_kinases_beta_heatmap[is.na(sod2_csf3_modulating_kinases_beta_heatmap)] <- 0
+
+hmcols <- colorRampPalette(colors = c("blue", "white", "red"))(35)
+paletteLength <- 35
+myBreaks <- c(seq(min(sod2_csf3_modulating_kinases_beta_heatmap), 0, length.out = ceiling(paletteLength / 2) + 1), seq(max(sod2_csf3_modulating_kinases_beta_heatmap) / floor(paletteLength / 2), max(sod2_csf3_modulating_kinases_beta_heatmap), length.out = floor(paletteLength / 2)))
+
+pheatmap::pheatmap(sod2_csf3_modulating_kinases_beta_heatmap,
+  clustering_method = "ward.D2",
+  cluster_rows = F,
+  color = hmcols,
+  breaks = myBreaks,
+  file = file.path(output_path, "Heatmaps/SOD2_CSF3_modulators_top_Tcell_dose_CD274_IDO1.png"),
+  fontsize = 9,
+  treeheight_col = 10,
+  height = 3,
+  width = 10
+)
+
+pheatmap::pheatmap(sod2_csf3_modulating_kinases_beta_heatmap,
+  clustering_method = "ward.D2",
+  cluster_rows = F,
+  color = hmcols,
+  breaks = myBreaks,
+  file = file.path(output_path, "Heatmaps/SOD2_CSF3_modulators_top_Tcell_dose_CD274_IDO1.pdf"),
+  fontsize = 9,
+  treeheight_col = 10,
+  height = 3,
+  width = 10
+)
+```
+
+# 5.Kinases that modulate 
+## 5.1 Select kinased based on dose analysis
+```{r}
+intersection_counts <- numeric(length(kinases))
+names(intersection_counts) <- kinases # Name the vector with kinase names
+```
+
+```{r}
+for (target in kinases) {
+  subset_results <- Tcell_genotype_diff_results[
+    Tcell_genotype_diff_results$gene_id == target &
+      Tcell_genotype_diff_results$term == "dose" &
+      Tcell_genotype_diff_results$q_value < 0.05,
+  ]
+  intersection_counts[target] <- length(intersect(Tcell_dose_diff_genes, subset_results$id))
+}
+
+result_df <- data.frame(
+  Kinase = names(intersection_counts),
+  IntersectionCount = intersection_counts
+)
+sorted_result <- result_df[order(-result_df$IntersectionCount), ]
+```
+
+```{r}
+print("Sorted kinases based on dose analysis intersection")
+print(head(sorted_result, 100))
+```
+
+## 5.2 Select kinased based on if T cell dose response genes are being perturbed in untreated
+```{r}
+intersection_counts <- numeric(length(kinases))
+names(intersection_counts) <- kinases
+```
+
+```{r}
+for (target in kinases) {
+  subset_results <- untreated_genotype_diff_results[
+    untreated_genotype_diff_results$gene_id == target &
+      untreated_genotype_diff_results$term != "(Intercept)" &
+      untreated_genotype_diff_results$q_value < 0.01,
+  ]
+
+  intersection_counts[target] <- length(intersect(Tcell_dose_diff_genes, subset_results$id))
+}
+
+result_df <- data.frame(
+  Kinase = names(intersection_counts),
+  IntersectionCount = intersection_counts
+)
+sorted_result <- result_df[order(-result_df$IntersectionCount), ]
+```
+
+```{r}
+print("Sorted kinases based on untreated perturbation of T-cell dose genes")
+print(head(sorted_result, 100))
+```
+
+```{r}
+write.csv(sorted_result, "deg_ntc_kinases.csv", row.names = FALSE)
+write.csv(Tcell_dose_diff_test, "Tcell_dose_diff_test.csv", row.names = FALSE)
+```
+
+```{r}
+
+```
