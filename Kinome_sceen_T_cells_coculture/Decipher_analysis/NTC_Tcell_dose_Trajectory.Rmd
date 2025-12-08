@@ -1,0 +1,157 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Ctrl+Shift+Enter*. 
+
+```{r}
+# Lingting Shi Columbia Univeristy May 2019 How to run seruat
+#Source https://satijalab.org/seurat/v3.0/pbmc3k_tutorial.html
+
+#Clean working enviorment
+rm(list=ls())
+gc()
+```
+
+```{r}
+#Install Package
+#install.packages('Seurat')
+#install.packages('dplyr')
+#install.packages('umap')
+#install.packages("reticulate")
+#Load library
+#devtools::install_github('satijalab/seurat-data')
+#install.packages("cowplot")
+#install.packages("SCORPIUS")
+#devtools::install_github('dviraran/SingleR')
+#install.packages("cluster")
+#library(SingleR)
+#install.packages("anndata")
+library(cowplot)
+library(dplyr)
+library(Seurat)
+library(umap)
+library(reticulate)
+library(SCORPIUS)
+library(ggplot2)
+library(MASS)
+library(anndata)
+```
+
+
+```{r}
+
+pert_type <-"crispra" 
+
+#pert_type <- "crispra"
+
+
+outdir = paste0("/home/user/Documents/Kinase_project/figures/decipher_analysis/NTC_", pert_type, "/")
+
+# make the dir if it doesn't exist
+if (!dir.exists(outdir)) {
+  dir.create(outdir, recursive = TRUE)
+}
+
+cds_folder <- "NTC_TCDG.h5ad"
+cds_path <- file.path(outdir, cds_folder)
+adata <- read_h5ad(cds_path)
+```
+```{r}
+adata
+```
+
+```{r}
+set.seed(3)
+```
+
+
+```{r}
+# Trejectory analysis
+
+expression <- as.matrix(adata$X)
+```
+
+```{r}
+celltype <- adata$obs$dosage
+```
+
+```{r}
+gc()
+gimp <- gene_importances(expression, adata$obs$decipher_time, num_permutations = 10, num_threads = 6)
+```
+
+```{r}
+gc()
+gimp$qvalue <- p.adjust(gimp$pvalue, "BH", length(gimp$pvalue))
+gene_sel <- gimp$gene[gimp$qvalue < .05]
+expr_sel <- expression[,gene_sel]
+```
+
+
+```{r}
+# Use setNames correctly
+draw_trajectory_heatmap(
+  expr_sel, 
+  adata$obs$decipher_time, 
+  progression_group = as.factor(adata$obs$dosage),
+  progression_group_palette = setNames(
+    c('#023047', '#219EBC', '#FFD166',  '#FF7F11'),  # values
+    c('0.0', '0.25', '0.5', '1.0')                       # names
+  )
+)
+
+```
+
+```{r}
+modules <- extract_modules(scale_quantile(expr_sel), adata$obs$decipher_time, verbose = FALSE)
+```
+```{r}
+draw_trajectory_heatmap(expr_sel, adata$obs$decipher_time, as.factor(adata$obs$dosage), modules, fontsize = 12, progression_group_palette = setNames(
+    c('#023047', '#219EBC', '#FFD166',  '#FF7F11'),  # values
+    c('0.0', '0.25', '0.5', '1.0')          
+  ), heatmap_palette = colorRampPalette(c("blue", "white", "red"))(100),)
+
+```
+
+```{r}
+# Define the plot function to avoid repetition
+plot_heatmap <- function() {
+  draw_trajectory_heatmap(expr_sel, adata$obs$decipher_time, as.factor(adata$obs$dosage), modules, fontsize = 12, progression_group_palette = setNames(
+      c('#023047', '#219EBC', '#FFD166',  '#FF7F11'),  # values
+      c('0.0', '0.25', '0.5', '1.0')          
+    ), heatmap_palette = colorRampPalette(c("blue", "white", "red"))(100))
+}
+
+# Save PDF
+pdf(file.path(outdir, "trajectory_heatmap.pdf"), width = 6, height = 4)
+plot_heatmap()
+dev.off()
+
+# Save PNG
+png(file.path(outdir, "trajectory_heatmap.png"), width = 1500, height = 800, res = 300)
+plot_heatmap()
+dev.off()
+
+# Save SVG
+svg(file.path(outdir, "trajectory_heatmap.svg"), width = 6, height = 4)
+plot_heatmap()
+dev.off()
+```
+
+```{r}
+saveRDS(modules, file.path(outdir, "trajectory_modules.rds"))
+```
+
+```{r}
+# end here
+```
+
+
+
+When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Ctrl+Shift+K* to preview the HTML file).
+
+The preview shows you a rendered HTML copy of the contents of the editor. Consequently, unlike *Knit*, *Preview* does not run any R code chunks. Instead, the output of the chunk when it was last run in the editor is displayed.
