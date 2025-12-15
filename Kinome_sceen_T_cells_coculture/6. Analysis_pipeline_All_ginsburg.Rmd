@@ -692,16 +692,16 @@ untreated_genotype_diff_test.list <- purrr::compact(untreated_genotype_diff_test
 ```
 
 ```{r}
-# if the directory does not exist
-# if (!dir.exists(file.path(output_path, "/Diff_test/"))) {
-#   dir.create(file.path(output_path, "/Diff_test/"), recursive = TRUE)
-# }
+if the directory does not exist
+if (!dir.exists(file.path(output_path, "/Diff_test/"))) {
+  dir.create(file.path(output_path, "/Diff_test/"), recursive = TRUE)
+}
 
-# saveRDS(untreated_genotype_diff_test.list, file.path(output_path, "Diff_test/untreated_genotype_diff_test.list.rds"))
+saveRDS(untreated_genotype_diff_test.list, file.path(output_path, "Diff_test/untreated_genotype_diff_test.list.rds"))
 ```
 
 ```{r}
-untreated_genotype_diff_test.list<- readRDS(file.path(output_path, "Diff_test/untreated_genotype_diff_test.list.rds"))
+#untreated_genotype_diff_test.list<- readRDS(file.path(output_path, "Diff_test/untreated_genotype_diff_test.list.rds"))
 for (target in names(untreated_genotype_diff_test.list)) {
   untreated_genotype_diff_test.list[[target]]$gene_id <- rep(target, nrow(untreated_genotype_diff_test.list[[target]]))
 }
@@ -827,7 +827,7 @@ saveRDS(genotype_by_Tcell_dose_diff_test.list, file.path(output_path, "Diff_test
 ```
 
 ```{r}
-genotype_by_Tcell_dose_diff_test.list <- readRDS(file.path(output_path, "Diff_test/genotype_by_Tcell_dose_diff_test.list.rds"))
+#genotype_by_Tcell_dose_diff_test.list <- readRDS(file.path(output_path, "Diff_test/genotype_by_Tcell_dose_diff_test.list.rds"))
 
 for (dose in names(genotype_by_Tcell_dose_diff_test.list)) {
   for (target in kinases) {

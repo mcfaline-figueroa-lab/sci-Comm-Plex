@@ -115,8 +115,6 @@ head(gene_set_combined_filtered)
 ```
 
 ```{r}
-
-
 gene_set_combined_filtered$q_value_a <- NULL
 gene_set_combined_filtered$q_value_i <- NULL
 head(gene_set_combined_filtered)
@@ -133,7 +131,6 @@ NFKB_data_matrix <- split_data_heatmap$NFKB
 head(Tcell_response_data_matrix)
 ```
 ```{r}
-
 # only keep beta column
 top_APM_MHC_CI_genes_matrix <- APM_MHC_CI_score_data_matrix %>% 
   select(gene_id, beta_i,beta_a) %>% 
@@ -152,22 +149,9 @@ annotation_df <- data.frame(row.names = colnames(top_APM_MHC_CI_genes_matrix),
 
 
 ```
-```{r}
-pheatmap::pheatmap(Tcell_response_genes_matrix,
-                   clustering_method = "ward.D2",
-                   cluster_cols = FALSE,
-                   color = hmcols,
-                   breaks = myBreaks,
-                   cutree_rows = 6,
-                   treeheight_row = 10,
-                   fontsize = 6,
-                   fontsize_col = 4,
-                   height = 5,
-                   width = 1.4,
-                   border_color = NA,
-                   file = "/home/user/Documents/Kinase_project/crispria_combined/figures_degs/Tcell_response_genes.png")
 
-pheatmap::pheatmap(Tcell_response_genes_matrix,
+```{r}
+pheatmap::pheatmap(top_APM_MHC_CI_genes_matrix,
                    clustering_method = "ward.D2",
                    cluster_cols = FALSE,
                    color = hmcols,
@@ -176,10 +160,25 @@ pheatmap::pheatmap(Tcell_response_genes_matrix,
                    treeheight_row = 10,
                    fontsize = 6,
                    fontsize_col = 4,
-                   height = 5,
+                   height = 2.75,
                    width = 1.4,
                    border_color = NA,
-                   file = "/home/user/Documents/Kinase_project/crispria_combined/figures_degs/Tcell_response_genes.pdf")
+                   file = "/home/user/Documents/Kinase_project/figures/crispria_combined/figures_degs/top_APM_MHC_CI_genes.png")
+
+
+pheatmap::pheatmap(top_APM_MHC_CI_genes_matrix,
+                   clustering_method = "ward.D2",
+                   cluster_cols = FALSE,
+                   color = hmcols,
+                   breaks = myBreaks,
+                   cutree_rows = 6,
+                   treeheight_row = 10,
+                   fontsize = 6,
+                   fontsize_col = 4,
+                   height = 2.75,
+                   width = 1.4,
+                   border_color = NA,
+                   file = "/home/user/Documents/Kinase_project/figures/crispria_combined/figures_degs/top_APM_MHC_CI_genes.pdf")
 
 ```
 
@@ -216,7 +215,7 @@ pheatmap::pheatmap(top_APM_MHC_CII_genes_matrix,
                    height = 2.75,
                    width = 1.4,
                    border_color = NA,
-                   file = "/home/user/Documents/Kinase_project/crispria_combined/figures_degs/top_APM_MHC_CII_genes.png")
+                   file = "/home/user/Documents/Kinase_project/figures/crispria_combined/figures_degs/top_APM_MHC_CII_genes.png")
 
 
 pheatmap::pheatmap(top_APM_MHC_CII_genes_matrix,
@@ -231,8 +230,7 @@ pheatmap::pheatmap(top_APM_MHC_CII_genes_matrix,
                    height = 2.75,
                    width = 1.4,
                    border_color = NA,
-                   file = "/home/user/Documents/Kinase_project/crispria_combined/figures_degs/top_APM_MHC_CII_genes.pdf")
-
+                   file = "/home/user/Documents/Kinase_project/figures/crispria_combined/figures_degs/top_APM_MHC_CII_genes.pdf")
 
 ```
 
@@ -269,7 +267,7 @@ pheatmap::pheatmap(Tcell_response_genes_matrix,
                    height = 5,
                    width = 1.4,
                    border_color = NA,
-                   file = "/home/user/Documents/Kinase_project/crispria_combined/figures_degs/Tcell_response_genes.png")
+                   file = "/home/user/Documents/Kinase_project/figures/crispria_combined/figures_degs/Tcell_response_genes.png")
 
 
 
@@ -285,7 +283,7 @@ pheatmap::pheatmap(Tcell_response_genes_matrix,
                    height = 5,
                    width = 1.4,
                    border_color = NA,
-                   file = "/home/user/Documents/Kinase_project/crispria_combined/figures_degs/Tcell_response_genes.pdf")
+                   file = "/home/user/Documents/Kinase_project/figures/crispria_combined/figures_degs/Tcell_response_genes.pdf")
 ```
 
 ```{r}
@@ -321,7 +319,7 @@ pheatmap::pheatmap(top_INFG_genes_matrix,
                    height = 2.75,
                    width = 1.4,
                    border_color = NA,
-                   file = "/home/user/Documents/Kinase_project/crispria_combined/figures_degs/top_INFG_genes.png")
+                   file = "/home/user/Documents/Kinase_project/figures/crispria_combined/figures_degs/top_INFG_genes.png")
 
 
 pheatmap::pheatmap(top_INFG_genes_matrix,
@@ -336,7 +334,7 @@ pheatmap::pheatmap(top_INFG_genes_matrix,
                    height = 2.75,
                    width = 1.4,
                    border_color = NA,
-                   file = "/home/user/Documents/Kinase_project/crispria_combined/figures_degs/top_INFG_genes.pdf")
+                   file = "/home/user/Documents/Kinase_project/figures/crispria_combined/figures_degs/top_INFG_genes.pdf")
 ```
 
 ```{r}
@@ -372,7 +370,7 @@ pheatmap::pheatmap(top_NFKB_genes_matrix,
                    height = 2.75,
                    width = 1.4,
                    border_color = NA,
-                   file = "/home/user/Documents/Kinase_project/crispria_combined/figures_degs/top_NFKB_genes.png")
+                   file = "/home/user/Documents/Kinase_project/figures/crispria_combined/figures_degs/top_NFKB_genes.png")
 
 pheatmap::pheatmap(top_NFKB_genes_matrix,
                    clustering_method = "ward.D2",
@@ -386,7 +384,7 @@ pheatmap::pheatmap(top_NFKB_genes_matrix,
                    height = 2.75,
                    width = 1.4,
                    border_color = NA,
-                   file = "/home/user/Documents/Kinase_project/crispria_combined/figures_degs/top_NFKB_genes.pdf")
+                   file = "/home/user/Documents/Kinase_project/figures/crispria_combined/figures_degs/top_NFKB_genes.pdf")
 
                   
 ```
