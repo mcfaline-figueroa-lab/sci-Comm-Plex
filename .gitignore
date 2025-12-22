@@ -1,0 +1,221 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+*.manifest
+*.spec
+pip-log.txt
+pip-delete-this-directory.txt
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+.hypothesis/
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.pyre/
+.pytype/
+cython_debug/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+*.ipynb_checkpoints/
+*/.ipynb_checkpoints/*
+
+# Jupyter Notebook outputs (optional - uncomment if you don't want to track outputs)
+# *.ipynb
+
+# R
+.Rhistory
+.Rapp.history
+.RData
+.Ruserdata
+*.Rproj
+.Rproj.user/
+.Renviron
+.Rprofile
+*.Rproj.user/
+packrat/
+renv/
+
+# R Markdown
+*.Rmd.cache/
+*.Rmd.knit.md
+*.Rmd.knit.html
+*.utf8.md
+*.knit.md
+
+# Data files
+*.csv
+*.tsv
+*.xlsx
+*.xls
+*.h5
+*.h5ad
+*.hdf5
+*.hdf
+*.fastq
+*.fasta
+*.fa
+*.fq
+*.bam
+*.sam
+*.vcf
+*.bed
+*.gtf
+*.gff
+*.bigwig
+*.bw
+*.bigbed
+*.bb
+
+# Large binary files
+*.pt
+*.pth
+*.pkl
+*.pickle
+*.model
+*.weights
+*.h5
+*.hdf5
+*.mat
+*.npy
+*.npz
+
+# Images (optional - uncomment if you don't want to track images)
+# *.png
+# *.jpg
+# *.jpeg
+# *.gif
+# *.svg
+# *.tiff
+# *.tif
+# *.pdf
+
+# Videos
+*.mp4
+*.avi
+*.mov
+*.mkv
+
+# Output directories
+output/
+outputs/
+results/
+results_*/
+figures/
+figure/
+figs/
+plots/
+*.png
+*.jpg
+*.jpeg
+*.pdf
+*.svg
+*.gif
+*.tiff
+*.tif
+
+# Temporary files
+*.tmp
+*.temp
+*.log
+*.out
+*.err
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+*.code-workspace
+
+# Environment
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+.conda/
+conda-meta/
+
+# Model checkpoints and training artifacts
+checkpoints/
+models/
+*.ckpt
+*.pth.tar
+wandb/
+mlruns/
+.neptune/
+
+# Decipher models
+_decipher_models/
+*.pt
+*.pth
+
+# Raw data directories
+raw/
+data/
+datasets/
+*.h5ad
+*.h5
+
+# Cache
+.cache/
+*.cache
+.pytest_cache/
+.mypy_cache/
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# Synapse (if using)
+.synapseCache/
+.synapseConfig
+
+# Other
+*.zip
+*.tar
+*.tar.gz
+*.rar
+*.7z
+
+# decipher model
+_decipher_models/
