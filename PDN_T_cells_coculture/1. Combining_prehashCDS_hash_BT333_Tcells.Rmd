@@ -1,0 +1,216 @@
+---
+title: "combining_prehash_cds_CROP_hash"
+output: html_document
+date: "2024-05-19"
+---
+```{r}
+rm(list=ls())
+gc()
+```
+
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+
+```{r}
+suppressPackageStartupMessages({
+  library(tidyr)
+  library(readr)
+  library(ggplot2)
+  library(stringr)
+  library(monocle3)
+  library(dplyr)
+})
+```
+
+```{r}
+# Load in crispri data
+cds.pre <- readRDS("/Users/lingtingshi/Documents/Kinase_project/Jose_data/20250430_BT333_Tcell_11chems_run2/11-final-output/cds_precell_prehash.RDS")
+```
+
+
+```{r}
+hist(colData(cds.pre)$n.umi,xlim=c(0,5000), breaks =200)
+```
+```{r}
+# kneed plot, cut off 500
+ggplot(colData(cds.pre) %>% as.data.frame() %>% arrange(desc(n.umi)) %>% mutate(cell_rank = dplyr::row_number()), aes(x= log10(cell_rank), y = log10(n.umi))) +
+  geom_hline(size = 0.2, yintercept = log10(500)) + #input what n.umi you want to cutoff for visualization
+  geom_point(size = 0.5, stroke = 0) +
+  monocle3:::monocle_theme_opts() +
+  scale_y_continuous(breaks = c(1,2,3,4,5)) +
+  xlab("Log10 CellRank") +
+  ylab("Log10 UMI") +
+  theme(plot.title = element_text(hjust = 0.5),
+        legend.position = "bottom", 
+        legend.key.width = unit(1,"line"),
+        legend.key.height = unit(0.2,"line"),
+        text = element_text(size = 6))
+```
+
+
+
+
+
+```{r}
+cds.pre
+```
+
+
+```{r}
+# filter based on knee plot, and output media umi
+#cds.pre <- cds.pre[,colData(cds.pre)$n.umi >= 500]
+
+#to count the median umis after we do the cutoff of 500 or more
+cols_for_writup <- colData(cds.pre) %>% as.data.frame()
+umis_column <- cols_for_writup[, "n.umi"]
+median_umi <- median(umis_column)
+```
+```{r}
+median_umi
+```
+
+```{r}
+colData(cds.pre)
+```
+
+
+```{r}
+# generate column call Cell, with RT and Lig info
+cols <- colData(cds.pre) %>% as.data.frame() %>%
+  mutate(cell_ID=Cell) %>%
+  tidyr::separate(col = Cell, into = c('P7', 'P5', NA, NA, 'n1', NA, NA, 'n2'), sep = "_") %>%
+  mutate(RT = paste('RT_BC_', n1, sep = '')) %>%
+  mutate(Lig = paste('Lig_BC_', n2, sep = '')) %>%
+  select(-n1, -n2)
+```
+```{r}
+head(row.names(cols))
+```
+
+
+# Assigning hash to colData
+
+read in hashtable.out
+```{r}
+hashTable <- read.table("/Users/lingtingshi/Documents/Kinase_project/Jose_data/20250430_BT333_Tcell_11chems_run2/hash/hash-final/hashTable.out", col.names = c("sample", "cell_ID", "oligo", "hash_umis"))
+```
+
+
+```{r}
+# create a new_cell column without p7
+#hashTable$new_cell <- sapply(hashTable$cell_ID, function(x){paste(base::substr(x, 5, 8), base::substr(x, 9, nchar(x)), sep = "")})
+
+```
+```{r}
+#hashTable$cell_ID = NULL
+```
+```{r}
+hashTable_summary <- hashTable %>%
+  group_by(cell_ID) %>%
+  mutate(proportion = hash_umis/sum(hash_umis),total_hash_umis_per_cell_ID = sum(hash_umis)) %>%
+  arrange(desc(proportion)) %>%
+  mutate(rank = row_number()) %>%
+  dplyr::filter(rank %in% c(1,2)) %>%
+  mutate(top_to_second_best_ratio = ifelse(sum(rank) > 1, proportion[rank == 1]/proportion[rank == 2], 10)) %>%
+  dplyr::filter(rank == 1)
+
+head(hashTable_summary)
+```
+
+```{r}
+hashTable_summary$treatment <- sapply(hashTable_summary$oligo,function(x){stringr::str_split(x,pattern = "_R")[[1]][1]})
+
+head(hashTable_summary)
+```
+
+```{r}
+ggplot(hashTable_summary, aes(x = log10(hash_umis))) +
+  geom_histogram() +
+monocle3:::monocle_theme_opts()
+
+ggplot(hashTable_summary[hashTable_summary$hash_umis > 5,], aes(x = log10(top_to_second_best_ratio))) +
+  geom_histogram() +
+monocle3:::monocle_theme_opts()
+```
+
+combining the prehash cds with the hash information
+```{r}
+cols$new_cell <- sapply(cols$cell_ID, function(x){paste(base::substr(x, 5, 8), base::substr(x, 9, nchar(x)), sep = "")})
+```
+
+
+```{r}
+cols <- cols %>% 
+  left_join(hashTable_summary, by = c("cell_ID" = "cell_ID", "sample" = "sample")) %>%
+  select(-Size_Factor, -proportion, -rank)
+
+dim(cols)
+```
+
+```{r}
+rownames(cols) <- cols$cell_ID
+```
+
+```{r}
+# assiging our cols dataframe as colData(cds)
+colData(cds.pre) <- DataFrame(cols)
+```
+
+
+```{r}
+# adding columns for log10(n.umi) and % mito
+colData(cds.pre)$log10.umi <- colData(cds.pre)$n.umi %>% log10()
+
+mt_genes <- rowData(cds.pre) %>% as.data.frame() %>%
+  filter(grepl("^MT-",gene_short_name) == TRUE)
+
+mt_genes_id <- rownames(mt_genes)
+colData(cds.pre)$percent_mito <- 100 * (colSums(exprs(cds.pre)[mt_genes_id,])/colSums(exprs(cds.pre)))
+
+```
+
+```{r}
+head(colData(cds.pre))
+```
+
+
+```{r}
+hist(colData(cds.pre)$hash_umis, 
+     breaks = 5000,  # or any other number of breaks you prefer
+     xlim = c(0, 50))
+```
+```{r}
+colData(cds.pre)
+```
+
+```{r}
+#cds_hash <-cds.pre[, !is.na(colData(cds.pre)$hash_umis)]
+# Minimal filtering 
+cds<- cds.pre[,!is.na(colData(cds.pre)$total_hash_umis_per_cell_ID)]
+cds<-cds[,colData(cds)$total_hash_umis_per_cell_ID>0]
+cds<-cds[,colData(cds)$top_to_second_best_ratio>2]
+```
+
+```{r}
+colData(cds)
+```
+```{r}
+#to count the median umis after we do the cutoff of 500 or more
+cols_for_writup <- colData(cds) %>% as.data.frame()
+umis_column <- cols_for_writup[, "n.umi"]
+median_umi <- median(umis_column)
+median_umi
+```
+
+
+
+```{r}
+saveRDS(cds.pre, "/Users/lingtingshi/Documents/Kinase_project/Jose_data/20250430_BT333_Tcell_11chems_run2/11-final-output//CDS_BT333_Tcells_0_cutoff.RDS")
+```
+
