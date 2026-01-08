@@ -59,6 +59,13 @@ gene_set_score_diff_test_results_i <- readRDS("/home/user/Documents/Kinase_proje
 gene_set_score_diff_test_results_i$q_value <- p.adjust(gene_set_score_diff_test_results_i$p_value, method = "BH")
 ```
 
+
+```{r}
+# save csv files
+write.csv(gene_set_score_diff_test_results_a, "/home/user/Documents/Kinase_project/crispra_final/CRISPRA_Figures/MHC_genes/gene_set_score_diff_test_results.csv", row.names = FALSE)
+write.csv(gene_set_score_diff_test_results_i, "/home/user/Documents/Kinase_project/crispri_final/CRISPRI_Figures/MHC_genes/gene_set_score_diff_test_results.csv", row.names = FALSE)
+
+```
 ```{r}
 unique(gene_set_score_diff_test_results_a$signature)
 ```
@@ -388,6 +395,43 @@ pheatmap::pheatmap(top_NFKB_genes_matrix,
 
                   
 ```
+
+```{r}
+# Your four gene sets
+genes1 <- rownames(top_APM_MHC_CII_genes_matrix)
+genes2 <- rownames(top_APM_MHC_CI_genes_matrix)
+genes3 <- rownames(top_INFG_genes_matrix)
+genes4 <- rownames(top_NFKB_genes_matrix)
+
+# Quick overlap counts
+length(intersect(genes1, genes2))
+length(intersect(genes1, genes3))
+length(intersect(genes1, genes4))
+length(intersect(genes2, genes3))
+length(intersect(genes2, genes4))
+length(intersect(genes3, genes4))
+
+# 4‑set Venn diagram
+# install.packages("VennDiagram")  # if not installed
+library(VennDiagram)
+library(grid)
+
+venn.diagram(
+  x = list(
+    APM_MHC_CII = genes1,
+    APM_MHC_CI  = genes2,
+    IFNG        = genes3,
+    NFKB        = genes4
+  ),
+  filename = "/home/user/Documents/Kinase_project/figures/crispria_combined/figures_degs/venn_APM_IFNG_NFKB.png",
+  imagetype = "png",
+  height = 2000, width = 2000, res = 300,
+  fill = c("#1f77b4", "#ff7f0e", "#2ca02c", "#d62728"),
+  alpha = 0.5
+)
+
+```
+
 ```{r}
 #install.packages("ComplexHeatmap")
 library(ComplexHeatmap)
@@ -396,13 +440,33 @@ library(tidyverse)
 ```
 ```{r}
 #read "/home/user/Documents/Kinase_project/20250206novogen_CRISPRA_run5_correct/SOD2_CSF3_modulators_top_Tcell_dose_CD274_IDO1.csv"
-CRISPRA_Deg <- read.csv("/home/user/Documents/Kinase_project/20250206novogen_CRISPRA_run5_correct/SOD2_CSF3_modulators_top_Tcell_dose_CD274_IDO1.csv")
+CRISPRA_Deg <- read.csv("/home/user/Documents/Kinase_project/crispra_final/CRISPRA_Figures/Heatmaps/SOD2_CSF3_modulators_top_Tcell_dose_CD274_IDO1.csv")
 head(CRISPRA_Deg$gene_id)
-CRISPRI_Deg <- read.csv("/home/user/Documents/Kinase_project/crispri/CRISPRI_Figures/Heatmaps/SOD2_CSF3_modulators_top_Tcell_dose_CD274_IDO1.csv")
+CRISPRI_Deg <- read.csv("/home/user/Documents/Kinase_project/crispri_final/CRISPRI_Figures/Heatmaps/SOD2_CSF3_modulators_top_Tcell_dose_CD274_IDO1.csv")
 head(CRISPRI_Deg$gene_id)
 
 ```
 
+```{r}
+length(unique(CRISPRA_Deg$gene_id))
+```
+
+```{r}
+length(unique(CRISPRI_Deg$gene_id))
+```
+
+```{r}
+# how many of them overlap
+overlap_genes <- intersect(CRISPRA_Deg$gene_id, CRISPRI_Deg$gene_id)
+length(overlap_genes)
+```
+
+```{r}
+# how many unique genes in total
+total_unique_genes <- union(CRISPRA_Deg$gene_id, CRISPRI_Deg$gene_id)
+length(total_unique_genes)
+
+```
 ```{r}
 
 CRISPRA_decipher <- read.csv("/home/user/Documents/Kinase_project/crispria_combined/figures_all_cells/significant_genes_crispra.csv")
