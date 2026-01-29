@@ -93,6 +93,10 @@ cell_data$dose_treatment <- paste(cell_data$Dose, cell_data$Tcell_Treatment, sep
 colData(cds)$drug_dose_treatment <- cell_data$drug_dose_treatment
 colData(cds)$dose_treatment <- cell_data$dose_treatment
 colData(cds)$drug_dose_treatment <- factor(colData(cds)$drug_dose_treatment)
+
+# Drug + dose only (no T-cell treatment)
+cell_data$drug_dose <- paste(cell_data$Drug, cell_data$Dose, sep="_")
+colData(cds)$drug_dose <- factor(cell_data$drug_dose)
 ```
 
 ```{r}
@@ -183,13 +187,37 @@ ggsave(file.path(outdir, "umap_pca_cluster.svg"), dpi = 600, width = 3, height =
 dosage_colors <- c('NoT' = '#023047', '0.5T' = '#FFD166')
 plot_cells(cds, color_cells_by = "Tcell_Treatment",cell_size = 0.2) +
   scale_color_manual(values = dosage_colors) +
-theme_void() +
-theme(legend.position = "right",
+  theme_void() +
+  theme(legend.position = "right",
         legend.key.width = unit(0.2,"line"),
         legend.key.height = unit(0.2,"line"))
 ggsave(file.path(outdir, "umap_tcell_treatment.png"), dpi = 600, width = 3, height = 1.5)
 ggsave(file.path(outdir, "umap_tcell_treatment.pdf"), dpi = 600, width = 3, height = 1.5)
 ggsave(file.path(outdir, "umap_tcell_treatment.svg"), dpi = 600, width = 3, height = 1.5)
+
+# Figure: UMAP by Drug
+plot_cells(cds, color_cells_by = "Drug", cell_size = 0.2) +
+  scale_color_brewer(palette = "Set3") +
+  theme_void() +
+  theme(legend.position = "right",
+        legend.key.width = unit(0.2, "line"),
+        legend.key.height = unit(0.2, "line"))
+ggsave(file.path(outdir, "umap_drug.png"), dpi = 600, width = 4, height = 2.3)
+ggsave(file.path(outdir, "umap_drug.pdf"), dpi = 600, width = 4, height = 2.3)
+ggsave(file.path(outdir, "umap_drug.svg"), dpi = 600, width = 4, height = 2.3)
+
+# Figure: UMAP by Dose
+plot_cells(cds, color_cells_by = "Dose", cell_size = 0.2) +
+  scale_color_brewer(palette = "Set2") +
+  theme_void() +
+  theme(legend.position = "right",
+        legend.key.width = unit(0.2, "line"),
+        legend.key.height = unit(0.2, "line"))
+ggsave(file.path(outdir, "umap_dose.png"), dpi = 600, width = 3, height = 1.5)
+ggsave(file.path(outdir, "umap_dose.pdf"), dpi = 600, width = 3, height = 1.5)
+ggsave(file.path(outdir, "umap_dose.svg"), dpi = 600, width = 3, height = 1.5)
+
+
 ```
 
 ```{r}
@@ -213,6 +241,8 @@ ggsave(file.path(outdir, "Tcell_Treatment_and_PCA_Cluster.png"), dpi = 600, widt
 ggsave(file.path(outdir, "Tcell_Treatment_and_PCA_Cluster.pdf"), dpi = 600, width = 1.7, height = 1.1)
 ggsave(file.path(outdir, "Tcell_Treatment_and_PCA_Cluster.svg"), dpi = 600, width = 1.7, height = 1.1)
 ```
+
+
 
 ```{r}
 # Figure: Chemical proportion per cluster

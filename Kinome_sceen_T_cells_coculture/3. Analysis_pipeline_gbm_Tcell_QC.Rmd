@@ -21,7 +21,7 @@ library(dplyr)
 library(tidyr)
 library(tibble)
 library(pheatmap)
-library(piano)
+#library(piano)
 library(DelayedArray)
 library(monocle3)
 library(UpSetR)
@@ -721,6 +721,12 @@ colData(Untreated_cds)$gene_id <- colData(Untreated_cds)$gene
 colData(Untreated_cds)$cell <- colData(Untreated_cds)$cell_ID
 ```
 
+
+```{r}
+Untreated_cds_f = Untreated_cds[,Untreated_cds$total_sgrna_read_per_cell>5]
+Untreated_cds = Untreated_cds_f[,Untreated_cds_f$sgRNA_proportion>.3]
+
+```
 ```{r}
 mean_expres <- calculate_mean_target_knockdown(Untreated_cds, targets, protein_to_gene_map)
 qc_path <- file.path(output_folder, "QC_plots/")
@@ -815,7 +821,7 @@ ggplot(
   geom_bar(stat = "summary", fun = "median", position = "dodge", color = "black", size = 0.1) +
   # facet_wrap(~mean_knockdown, scales = "fixed", ncol = 3) +  # Change scales to "fixed"
   monocle3:::monocle_theme_opts() +
-  theme(text = element_text(size = 6)) +
+  theme(text = element_text(size = 12)) +
   ylab("Median knockdown level \nacross perturbations") +
   xlab("sgRNA assignment") # Set the y-axis limits
 ggsave(file.path(qc_path, "Median_knockdown_levels_by_0.3g_5_cutoff_Figure.png"), width = 2.5, height = 2, dpi = 600)

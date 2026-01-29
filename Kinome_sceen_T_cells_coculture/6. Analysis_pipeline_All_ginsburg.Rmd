@@ -68,11 +68,11 @@ plan(multisession, workers = n_cores)
 
 ```{r}
 
-#pert_type <-"crispri" 
+pert_type <-"crispri" 
 
-pert_type <- "crispra"
+#pert_type <- "crispra"
 
-base_dir <- paste0("/burg/cgl/users/ls3456_v2/GBM_Tcells_CRISPRA/", pert_type, "_final/")
+base_dir <- paste0("/burg/cgl/users/ls3456_v2/GBM_Tcells_", toupper(pert_type), "/", pert_type, "_final/")
 setwd(base_dir)
 
 output_folder <- paste0(toupper(pert_type), "_Figures/")
@@ -453,7 +453,7 @@ for(kinase in kinase_perturbation){
     
   for(gene_set in c("APM_MHC_CI_score","APM_MHC_CII_score","Tcell_response","IFNG","NFKB")){
       
-    score_df_subset <- colData(cds) %>% as.data.frame() %>% filter(gene_id %in% c("NTC",kinase), dose == 0)
+    score_df_subset <- colData(cds) %>% as.data.frame() %>% filter(gene_id %in% c("NTC",kinase))
     score_df_subset$gene_id <- factor(score_df_subset$gene_id, levels = c("NTC",kinase))
       
     model_to_test <- paste0(gene_set," ~ gene_id+ dose")
