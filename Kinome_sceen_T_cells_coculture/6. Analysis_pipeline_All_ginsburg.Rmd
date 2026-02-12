@@ -68,9 +68,9 @@ plan(multisession, workers = n_cores)
 
 ```{r}
 
-pert_type <-"crispri" 
+#pert_type <-"crispri" 
 
-#pert_type <- "crispra"
+pert_type <- "crispra"
 
 base_dir <- paste0("/burg/cgl/users/ls3456_v2/GBM_Tcells_", toupper(pert_type), "/", pert_type, "_final/")
 setwd(base_dir)

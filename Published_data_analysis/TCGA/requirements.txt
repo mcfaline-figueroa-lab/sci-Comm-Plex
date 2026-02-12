@@ -1,0 +1,13 @@
+# R package requirements for TCGA_analysis_final.R
+# Install via the helper script: Rscript install_requirements.R
+# (or manually with install.packages()).
+
+# Core
+ tidyverse
+ survival
+ lubridate
+ ggsurvfit
+ gtsummary
+ tidycmprsk
+ ggExtra
+ gghalves

@@ -46,7 +46,7 @@ pert_type <- "crispra"
 base_dir <- paste0("/home/user/Documents/Kinase_project/", pert_type, "_final/")
 setwd(base_dir)
 
-output_dir<- file.path(base_dir, paste0(toupper(pert_type), "_Figures/NTC_analysis"))
+output_dir <- paste0(toupper(pert_type), "_Figures/NTC_analysis")
 
 # make the dir if it doesn't exist
 if (!dir.exists(output_dir)) {
@@ -439,6 +439,289 @@ pheatmap(
 )
 ```
 
+## 2.3 Pathway analysis
+
+```{r}
+# # Install Bioconductor packages (run once)
+# if (!require("BiocManager", quietly = TRUE))
+#     install.packages("BiocManager")
+
+# BiocManager::install(c("clusterProfiler", "org.Hs.eg.db", "enrichplot"))
+# install.packages("msigdbr")  # This one is on CRAN
+```
+
+```{r}
+# library(clusterProfiler)
+# library(msigdbr)
+# library(org.Hs.eg.db)
+# library(enrichplot)
+```
+
+```{r}
+Tcell_dose_response_genes <- Tcell_dose_response_diff_test %>%
+    dplyr::filter(term == "dose") %>%
+    dplyr::filter(q_value < 0.05) %>%
+    dplyr::arrange(-normalized_effect) %>%
+    dplyr::select(gene_short_name, normalized_effect)
+rank_list <- Tcell_dose_diff_genes %>% dplyr::pull(normalized_effect)
+names(rank_list) <- Tcell_dose_diff_genes %>% dplyr::pull(gene_short_name)
+```
+
+```{r}
+# Get Hallmark gene sets from MSigDB
+hallmark <- msigdbr(species = "Homo sapiens", collection = "H")
+hallmark_list <- split(hallmark$gene_symbol, hallmark$gs_name)
+
+# Run GSEA
+gsea_res <- fgsea(pathways = hallmark_list, stats = rank_list)
+gsea_res_sig <- gsea_res[gsea_res$NES > 0 & gsea_res$padj < 0.05, ]
+```
+
+```{r}
+ggplot(gsea_res_sig, aes(x = NES, y = reorder(pathway, NES), fill = -log10(padj))) +
+    geom_col() +
+    labs(x = "Normalized Enrichment Score (NES)", y = "Pathway") +
+    scale_fill_gradient(low = "#C0C6CB", high = "#27408E") +
+    monocle3:::monocle_theme_opts() +
+    theme(legend.position = "top",
+        axis.text = element_text(size = 8),
+        axis.title = element_text(size = 10),
+        legend.text = element_text(size = 8),
+        legend.title = element_text(size = 10))
+ggsave(file.path(output_dir, "DEG_testing/gsea_res_sig.png"), width = 5, height = 4)
+ggsave(file.path(output_dir, "DEG_testing/gsea_res_sig.pdf"), width = 5, height = 4)
+```
+
+```{r}
+# Concat all genes
+gsea_res_sig_genes <- gsea_res_sig %>%
+    dplyr::arrange(NES) %>%
+    dplyr::select(leadingEdge)
+gsea_res_sig_genes_list <- unlist(gsea_res_sig_genes$leadingEdge)
+```
+
+```{r}
+NTC_exprs <- exprs(NTC_cds)
+NTC_exprs <- Matrix::t(NTC_exprs) / colData(NTC_cds)$Size_Factor
+NTC_exprs <- log(NTC_exprs + 1)
+colnames(NTC_exprs) <- rowData(NTC_cds)$gene_short_name
+NTC_exprs <- NTC_exprs[, unique(gsea_res_sig_genes_list)]
+
+NTC_exprs_df <- NTC_exprs %>%
+  as.matrix() %>%
+  as.data.frame() %>%
+  dplyr::mutate(dosage = colData(NTC_cds)$dosage) %>%
+  tidyr::pivot_longer(
+    cols = all_of(gsea_res_sig_genes_list),
+    names_to = "gene",
+    values_to = "expr"
+  ) %>%
+  dplyr::group_by(dosage, gene) %>%
+  dplyr::summarise(mean_expr = mean(expr)) %>%
+  tidyr::pivot_wider(names_from = "gene", values_from = "mean_expr") %>%
+  tibble::column_to_rownames("dosage") %>%
+  as.matrix() %>% t()
+NTC_exprs_df <- NTC_exprs_df[gsea_res_sig_genes_list, ]
+
+paletteLength <- 35
+hmcols <- colorRampPalette(c("navy", "white", "firebrick2"))(paletteLength)
+pheatmap(NTC_exprs_df,
+        cluster_rows = FALSE,
+        cluster_cols = FALSE,
+        scale = "row",
+        color = hmcols,
+        filename = file.path(output_dir, "DEG_testing/gsea_res_sig_heatmap.png"),
+        fontsize_col = 8,
+        fontsize_row = 5,
+        angle_col = 0,
+        width = 4, height = 4)
+pheatmap(NTC_exprs_df,
+        cluster_rows = FALSE,
+        cluster_cols = FALSE,
+        scale = "row",
+        color = hmcols,
+        filename = file.path(output_dir, "DEG_testing/gsea_res_sig_heatmap.pdf"),
+        fontsize_col = 8,
+        fontsize_row = 5,
+        angle_col = 0,
+        width = 4, height = 4)
+```
+
+### 2.3.2 GO Enrichment Analysis (Gene Set Enrichment Analysis)
+```{r}
+# ============================================
+# 1. PREPARE DATA
+# ============================================
+
+# Use high-value points from volcano plot
+selected_columns <- high_value_points[, c("gene_short_name", "normalized_effect")]
+
+# ============================================
+# 2. MAP GENE SYMBOLS TO ENTREZ IDs
+# ============================================
+
+# Convert gene symbols to ENTREZ IDs
+mapped_genes <- bitr(
+  selected_columns$gene_short_name, 
+  fromType = "SYMBOL", 
+  toType = "ENTREZID", 
+  OrgDb = org.Hs.eg.db
+)
+
+# Merge mapping with original data
+selected_columns_mapped <- merge(
+  selected_columns, 
+  mapped_genes, 
+  by.x = "gene_short_name", 
+  by.y = "SYMBOL", 
+  all.x = TRUE
+)
+
+# Remove unmapped genes (NA values)
+selected_columns_mapped <- na.omit(selected_columns_mapped)
+
+print(paste("Mapped", nrow(selected_columns_mapped), "genes to ENTREZ IDs"))
+```
+
+```{r}
+# ============================================
+# 3. PREPARE GENE LIST FOR GSE ANALYSIS
+# ============================================
+
+# Sort by normalized effect (descending order)
+selected_columns_mapped <- selected_columns_mapped %>% 
+  arrange(desc(normalized_effect))
+
+# Create named numeric vector: names = ENTREZ IDs, values = effect sizes
+geneList <- setNames(
+  selected_columns_mapped$normalized_effect, 
+  selected_columns_mapped$ENTREZID
+)
+
+print(paste("Gene list prepared with", length(geneList), "genes"))
+head(geneList)
+```
+
+```{r}
+# ============================================
+# 4. PERFORM GO ENRICHMENT ANALYSIS (GSEA)
+# ============================================
+
+go_results <- gseGO(
+  geneList = geneList,
+  OrgDb = org.Hs.eg.db,
+  ont = "BP",  # Biological Process
+  minGSSize = 10,
+  maxGSSize = 500,
+  pvalueCutoff = 0.05,
+  verbose = FALSE
+)
+
+# View summary of results
+print(paste("Found", nrow(go_results@result), "significantly enriched GO terms"))
+head(go_results@result)
+
+# Save results table
+write.csv(go_results@result, 
+          file.path(output_dir, "DEG_testing/GO_enrichment_results.csv"), 
+          row.names = FALSE)
+```
+
+```{r}
+# ============================================
+# 5. VISUALIZE AND SAVE RESULTS
+# ============================================
+
+# Create dot plot split by direction of enrichment
+if (nrow(go_results@result) > 0) {
+  p <- dotplot(go_results, showCategory = 30, split = ".sign") + 
+    facet_grid(. ~ .sign) +
+    theme(axis.text.y = element_text(size = 8))
+  
+  # Save plot in multiple formats
+  ggsave(
+    file.path(output_dir, "DEG_testing/dotplot_go_results.png"), 
+    plot = p, 
+    width = 8, 
+    height = 12, 
+    dpi = 300
+  )
+  
+  ggsave(
+    file.path(output_dir, "DEG_testing/dotplot_go_results.pdf"), 
+    plot = p, 
+    width = 8, 
+    height = 12
+  )
+  
+  # Display plot
+  print(p)
+} else {
+  print("No significant GO terms found")
+}
+```
+
+```{r}
+# Additional GO visualization: enrichment map
+if (nrow(go_results@result) > 0) {
+  # Simplify GO terms (remove redundant terms)
+  go_results_simplified <- simplify(go_results, cutoff = 0.7, by = "p.adjust")
+  
+  # Create enrichment map
+  p_map <- dotplot(go_results_simplified, showCategory = 20) +
+    theme(axis.text.y = element_text(size = 8))
+  
+  ggsave(
+    file.path(output_dir, "DEG_testing/simplified_go_dotplot.png"),
+    plot = p_map,
+    width = 8,
+    height = 8,
+    dpi = 300
+  )
+  
+  print(p_map)
+}
+```
+
+```{r}
+# Gene-Concept Network for top GO terms
+if (nrow(go_results@result) > 0) {
+  p_cnet <- cnetplot(go_results, 
+                     categorySize = "pvalue",
+                     showCategory = 5,
+                     foldChange = geneList) +
+    scale_color_gradient2(low = "blue", mid = "white", high = "red", midpoint = 0)
+  
+  ggsave(
+    file.path(output_dir, "DEG_testing/go_gene_concept_network.png"),
+    plot = p_cnet,
+    width = 10,
+    height = 10,
+    dpi = 300
+  )
+  
+  print(p_cnet)
+}
+```
+
+```{r}
+# GO enrichment heatmap
+if (nrow(go_results@result) > 0) {
+  p_heat <- heatplot(go_results, showCategory = 20, foldChange = geneList) +
+    scale_fill_gradient2(low = "blue", mid = "white", high = "red", midpoint = 0)
+  
+  ggsave(
+    file.path(output_dir, "DEG_testing/go_heatplot.png"),
+    plot = p_heat,
+    width = 10,
+    height = 8,
+    dpi = 300
+  )
+  
+  print(p_heat)
+}
+```
+
 ## 2.4 T cell dose-response significant genes
 ```{r}
 Tcell_dose_response_sig_genes <- Tcell_dose_response_diff_test %>%
@@ -695,5 +978,5 @@ pheatmap::pheatmap(cds_exprs_scaled[Tcell_dose_response_sig_genes, sampled_GBM_c
 ```
 
 ```{r}
-sessionInfo() 
+sessionInfo()
 ```

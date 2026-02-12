@@ -279,7 +279,7 @@ calculate_mean_target_knockdown <- function(cds, gene_short_name_list, protein_t
 }
 
 # 2. Load in the data
-pert_type <- "crispri"
+pert_type <- "crispra"
 
 base_dir <- paste0("/home/user/Documents/Kinase_project/", pert_type, "_final/")
 setwd(base_dir)
