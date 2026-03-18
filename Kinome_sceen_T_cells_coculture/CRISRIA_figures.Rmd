@@ -111,7 +111,7 @@ head(gene_set_combined)
 ```
 
 ```{r}
-# keep only the either qvalue columns < 0.05 
+# keep only the either qvalue columns < 0.01 
 gene_set_combined_filtered <- gene_set_combined %>%
   filter((!is.na(q_value_a) & q_value_a < 0.05) | 
          (!is.na(q_value_i) & q_value_i < 0.05)) %>%
@@ -121,6 +121,28 @@ head(gene_set_combined_filtered)
 
 ```
 
+
+```{r}
+# Create a column with the minimum p-value from either q_value_a or q_value_i
+# Then select top 30 genes per signature
+gene_set_combined_top30_by_sig <- gene_set_combined %>%
+  filter((!is.na(q_value_a) & q_value_a < 0.05) | 
+         (!is.na(q_value_i) & q_value_i < 0.05)) %>%
+  mutate(q_value_min = pmin(q_value_a, q_value_i, na.rm = TRUE)) %>%
+  group_by(signature) %>%
+  slice_min(q_value_min, n = 30) %>%
+  ungroup()
+
+# View the results
+head(gene_set_combined_top30_by_sig)
+
+# Check how many genes per signature
+gene_set_combined_top30_by_sig %>% count(signature)
+
+# Save to CSV
+write.csv(gene_set_combined_top30_by_sig, "/home/user/Documents/Kinase_project/figures/crispria_combined/figures_degs/gene_set_combined_top30_by_signature.csv", row.names = FALSE)
+
+```
 ```{r}
 # save gene_set_combined_filtered to csv
 write.csv(gene_set_combined_filtered, "/home/user/Documents/Kinase_project/figures/crispria_combined/figures_degs/gene_set_combined_filtered.csv", row.names = FALSE)
@@ -141,28 +163,49 @@ INFG_data_matrix <- split_data_heatmap$IFNG
 NFKB_data_matrix <- split_data_heatmap$NFKB
 head(Tcell_response_data_matrix)
 ```
+
+```{r}
+gene_set_combined_top30_by_sig$q_value_a <- NULL
+gene_set_combined_top30_by_sig$q_value_i <- NULL
+head(gene_set_combined_top30_by_sig)
+```
+
+```{r}
+split_data_heatmap <- split(gene_set_combined_top30_by_sig, gene_set_combined_top30_by_sig$signature)
+# Access the subsets by their names
+APM_MHC_CI_score_data_matrix_top30_by_sig <- split_data_heatmap$APM_MHC_CI_score
+APM_MHC_CII_score_data_matrix_top30_by_sig <- split_data_heatmap$APM_MHC_CII_score
+Tcell_response_data_matrix_top30_by_sig <- split_data_heatmap$Tcell_response
+INFG_data_matrix_top30_by_sig <- split_data_heatmap$IFNG
+NFKB_data_matrix_top30_by_sig <- split_data_heatmap$NFKB
+head(Tcell_response_data_matrix_top30_by_sig)
+```
+
+
+
 ```{r}
 # only keep beta column
-top_APM_MHC_CI_genes_matrix <- APM_MHC_CI_score_data_matrix %>% 
-  select(gene_id, beta_i,beta_a) %>% 
+top_APM_MHC_CI_genes_matrix_top30_by_sig <- APM_MHC_CI_score_data_matrix_top30_by_sig %>% 
+  select(gene_id, beta_i, beta_a) %>% 
+  rename(CRISPRi = beta_i, CRISPRa = beta_a) %>%
   as.data.frame()
 
-row.names(top_APM_MHC_CI_genes_matrix) <- top_APM_MHC_CI_genes_matrix$gene_id
-top_APM_MHC_CI_genes_matrix$gene_id <- NULL
+row.names(top_APM_MHC_CI_genes_matrix_top30_by_sig) <- top_APM_MHC_CI_genes_matrix_top30_by_sig$gene_id
+top_APM_MHC_CI_genes_matrix_top30_by_sig$gene_id <- NULL
 hmcols <- colorRampPalette(c("blue","white","red"))(35)
 
 paletteLength <- 35
-myBreaks <- c(seq(min(top_APM_MHC_CI_genes_matrix), 0, length.out=ceiling(paletteLength/2) + 1),
-              seq(max(top_APM_MHC_CI_genes_matrix)/paletteLength, max(top_APM_MHC_CI_genes_matrix), length.out=floor(paletteLength/2)))
+myBreaks <- c(seq(min(top_APM_MHC_CI_genes_matrix_top30_by_sig), 0, length.out=ceiling(paletteLength/2) + 1),
+              seq(max(top_APM_MHC_CI_genes_matrix_top30_by_sig)/paletteLength, max(top_APM_MHC_CI_genes_matrix_top30_by_sig), length.out=floor(paletteLength/2)))
 
-annotation_df <- data.frame(row.names = colnames(top_APM_MHC_CI_genes_matrix), 
-                            condition_id = colnames(top_APM_MHC_CI_genes_matrix))
+annotation_df <- data.frame(row.names = colnames(top_APM_MHC_CI_genes_matrix_top30_by_sig), 
+                            condition_id = colnames(top_APM_MHC_CI_genes_matrix_top30_by_sig))
 
 
 ```
 
 ```{r}
-pheatmap::pheatmap(top_APM_MHC_CI_genes_matrix,
+pheatmap::pheatmap(top_APM_MHC_CI_genes_matrix_top30_by_sig,
                    clustering_method = "ward.D2",
                    cluster_cols = FALSE,
                    color = hmcols,
@@ -170,14 +213,14 @@ pheatmap::pheatmap(top_APM_MHC_CI_genes_matrix,
                    cutree_rows = 6,
                    treeheight_row = 10,
                    fontsize = 6,
-                   fontsize_col = 4,
-                   height = 2.75,
+                   fontsize_col = 6,
+                   height = 3,
                    width = 1.4,
                    border_color = NA,
                    file = "/home/user/Documents/Kinase_project/figures/crispria_combined/figures_degs/top_APM_MHC_CI_genes.png")
 
 
-pheatmap::pheatmap(top_APM_MHC_CI_genes_matrix,
+pheatmap::pheatmap(top_APM_MHC_CI_genes_matrix_top30_by_sig,
                    clustering_method = "ward.D2",
                    cluster_cols = FALSE,
                    color = hmcols,
@@ -185,8 +228,8 @@ pheatmap::pheatmap(top_APM_MHC_CI_genes_matrix,
                    cutree_rows = 6,
                    treeheight_row = 10,
                    fontsize = 6,
-                   fontsize_col = 4,
-                   height = 2.75,
+                   fontsize_col = 6,
+                   height = 3,
                    width = 1.4,
                    border_color = NA,
                    file = "/home/user/Documents/Kinase_project/figures/crispria_combined/figures_degs/top_APM_MHC_CI_genes.pdf")
@@ -196,25 +239,26 @@ pheatmap::pheatmap(top_APM_MHC_CI_genes_matrix,
 ```{r}
 
 # only keep beta column
-top_APM_MHC_CII_genes_matrix <- APM_MHC_CII_score_data_matrix %>% 
+top_APM_MHC_CII_genes_matrix_top30_by_sig <- APM_MHC_CII_score_data_matrix_top30_by_sig %>% 
   select(gene_id, beta_i,beta_a) %>% 
+  rename(CRISPRi = beta_i, CRISPRa = beta_a) %>%
   as.data.frame()
 
-row.names(top_APM_MHC_CII_genes_matrix) <- top_APM_MHC_CII_genes_matrix$gene_id
-top_APM_MHC_CII_genes_matrix$gene_id <- NULL
+row.names(top_APM_MHC_CII_genes_matrix_top30_by_sig) <- top_APM_MHC_CII_genes_matrix_top30_by_sig$gene_id
+top_APM_MHC_CII_genes_matrix_top30_by_sig$gene_id <- NULL
 hmcols <- colorRampPalette(c("blue","white","red"))(35)
 
 paletteLength <- 35
-myBreaks <- c(seq(min(top_APM_MHC_CII_genes_matrix), 0, length.out=ceiling(paletteLength/2) + 1),
-              seq(max(top_APM_MHC_CII_genes_matrix)/paletteLength, max(top_APM_MHC_CII_genes_matrix), length.out=floor(paletteLength/2)))
+myBreaks <- c(seq(min(top_APM_MHC_CII_genes_matrix_top30_by_sig), 0, length.out=ceiling(paletteLength/2) + 1),
+              seq(max(top_APM_MHC_CII_genes_matrix_top30_by_sig)/paletteLength, max(top_APM_MHC_CII_genes_matrix_top30_by_sig), length.out=floor(paletteLength/2)))
 
-annotation_df <- data.frame(row.names = colnames(top_APM_MHC_CII_genes_matrix), 
-                            condition_id = colnames(top_APM_MHC_CII_genes_matrix))
+annotation_df <- data.frame(row.names = colnames(top_APM_MHC_CII_genes_matrix_top30_by_sig), 
+                            condition_id = colnames(top_APM_MHC_CII_genes_matrix_top30_by_sig))
 
 
 ```
 ```{r}
-pheatmap::pheatmap(top_APM_MHC_CII_genes_matrix,
+pheatmap::pheatmap(top_APM_MHC_CII_genes_matrix_top30_by_sig,
                    clustering_method = "ward.D2",
                    cluster_cols = FALSE,
                    color = hmcols,
@@ -222,14 +266,14 @@ pheatmap::pheatmap(top_APM_MHC_CII_genes_matrix,
                    cutree_rows = 6,
                    treeheight_row = 10,
                    fontsize = 6,
-                   fontsize_col = 4,
-                   height = 2.75,
+                   fontsize_col = 6,
+                   height = 3,
                    width = 1.4,
                    border_color = NA,
                    file = "/home/user/Documents/Kinase_project/figures/crispria_combined/figures_degs/top_APM_MHC_CII_genes.png")
 
 
-pheatmap::pheatmap(top_APM_MHC_CII_genes_matrix,
+pheatmap::pheatmap(top_APM_MHC_CII_genes_matrix_top30_by_sig,
                    clustering_method = "ward.D2",
                    cluster_cols = FALSE,
                    color = hmcols,
@@ -237,8 +281,8 @@ pheatmap::pheatmap(top_APM_MHC_CII_genes_matrix,
                    cutree_rows = 6,
                    treeheight_row = 10,
                    fontsize = 6,
-                   fontsize_col = 4,
-                   height = 2.75,
+                   fontsize_col = 6,
+                   height = 3,
                    width = 1.4,
                    border_color = NA,
                    file = "/home/user/Documents/Kinase_project/figures/crispria_combined/figures_degs/top_APM_MHC_CII_genes.pdf")
@@ -248,25 +292,26 @@ pheatmap::pheatmap(top_APM_MHC_CII_genes_matrix,
 ```{r}
 
 # only keep beta column
-Tcell_response_genes_matrix <- Tcell_response_data_matrix %>% 
+Tcell_response_genes_matrix_top30_by_sig <- Tcell_response_data_matrix_top30_by_sig %>% 
   select(gene_id, beta_i,beta_a) %>% 
+  rename(CRISPRi = beta_i, CRISPRa = beta_a) %>%
   as.data.frame()
 
-row.names(Tcell_response_genes_matrix) <- Tcell_response_genes_matrix$gene_id
-Tcell_response_genes_matrix$gene_id <- NULL
+row.names(Tcell_response_genes_matrix_top30_by_sig) <- Tcell_response_genes_matrix_top30_by_sig$gene_id
+Tcell_response_genes_matrix_top30_by_sig$gene_id <- NULL
 hmcols <- colorRampPalette(c("blue","white","red"))(35)
 
 paletteLength <- 35
-myBreaks <- c(seq(min(Tcell_response_genes_matrix), 0, length.out=ceiling(paletteLength/2) + 1),
-              seq(max(Tcell_response_genes_matrix)/paletteLength, max(Tcell_response_genes_matrix), length.out=floor(paletteLength/2)))
+myBreaks <- c(seq(min(Tcell_response_genes_matrix_top30_by_sig), 0, length.out=ceiling(paletteLength/2) + 1),
+              seq(max(Tcell_response_genes_matrix_top30_by_sig)/paletteLength, max(Tcell_response_genes_matrix_top30_by_sig), length.out=floor(paletteLength/2)))
 
-annotation_df <- data.frame(row.names = colnames(Tcell_response_genes_matrix), 
-                            condition_id = colnames(Tcell_response_genes_matrix))
+annotation_df <- data.frame(row.names = colnames(Tcell_response_genes_matrix_top30_by_sig), 
+                            condition_id = colnames(Tcell_response_genes_matrix_top30_by_sig))
 
 
 ```
 ```{r}
-pheatmap::pheatmap(Tcell_response_genes_matrix,
+pheatmap::pheatmap(Tcell_response_genes_matrix_top30_by_sig,
                    clustering_method = "ward.D2",
                    cluster_cols = FALSE,
                    color = hmcols,
@@ -274,7 +319,7 @@ pheatmap::pheatmap(Tcell_response_genes_matrix,
                    cutree_rows = 6,
                    treeheight_row = 10,
                    fontsize = 6,
-                   fontsize_col = 4,
+                   fontsize_col = 6,
                    height = 5,
                    width = 1.4,
                    border_color = NA,
@@ -282,7 +327,7 @@ pheatmap::pheatmap(Tcell_response_genes_matrix,
 
 
 
-pheatmap::pheatmap(Tcell_response_genes_matrix,
+pheatmap::pheatmap(Tcell_response_genes_matrix_top30_by_sig,
                    clustering_method = "ward.D2",
                    cluster_cols = FALSE,
                    color = hmcols,
@@ -290,7 +335,7 @@ pheatmap::pheatmap(Tcell_response_genes_matrix,
                    cutree_rows = 6,
                    treeheight_row = 10,
                    fontsize = 6,
-                   fontsize_col = 4,
+                   fontsize_col = 6,
                    height = 5,
                    width = 1.4,
                    border_color = NA,
@@ -300,25 +345,26 @@ pheatmap::pheatmap(Tcell_response_genes_matrix,
 ```{r}
 
 # only keep beta column
-top_INFG_genes_matrix <- INFG_data_matrix %>% 
+top_INFG_genes_matrix_top30_by_sig <- INFG_data_matrix_top30_by_sig %>% 
   select(gene_id, beta_i,beta_a) %>% 
+  rename(CRISPRi = beta_i, CRISPRa = beta_a) %>%  
   as.data.frame()
 
-row.names(top_INFG_genes_matrix) <- top_INFG_genes_matrix$gene_id
-top_INFG_genes_matrix$gene_id <- NULL
+row.names(top_INFG_genes_matrix_top30_by_sig) <- top_INFG_genes_matrix_top30_by_sig$gene_id
+top_INFG_genes_matrix_top30_by_sig$gene_id <- NULL
 hmcols <- colorRampPalette(c("blue","white","red"))(35)
 
 paletteLength <- 35
-myBreaks <- c(seq(min(top_INFG_genes_matrix), 0, length.out=ceiling(paletteLength/2) + 1),
-              seq(max(top_INFG_genes_matrix)/paletteLength, max(top_INFG_genes_matrix), length.out=floor(paletteLength/2)))
+myBreaks <- c(seq(min(top_INFG_genes_matrix_top30_by_sig), 0, length.out=ceiling(paletteLength/2) + 1),
+              seq(max(top_INFG_genes_matrix_top30_by_sig)/paletteLength, max(top_INFG_genes_matrix_top30_by_sig), length.out=floor(paletteLength/2)))
 
-annotation_df <- data.frame(row.names = colnames(top_INFG_genes_matrix), 
-                            condition_id = colnames(top_INFG_genes_matrix))
+annotation_df <- data.frame(row.names = colnames(top_INFG_genes_matrix_top30_by_sig), 
+                            condition_id = colnames(top_INFG_genes_matrix_top30_by_sig))
 
 
 ```
 ```{r}
-pheatmap::pheatmap(top_INFG_genes_matrix,
+pheatmap::pheatmap(top_INFG_genes_matrix_top30_by_sig,
                    clustering_method = "ward.D2",
                    cluster_cols = FALSE,
                    color = hmcols,
@@ -326,14 +372,14 @@ pheatmap::pheatmap(top_INFG_genes_matrix,
                    cutree_rows = 6,
                    treeheight_row = 10,
                    fontsize = 6,
-                   fontsize_col = 4,
-                   height = 2.75,
+                   fontsize_col = 6,
+                   height = 3,
                    width = 1.4,
                    border_color = NA,
                    file = "/home/user/Documents/Kinase_project/figures/crispria_combined/figures_degs/top_INFG_genes.png")
 
 
-pheatmap::pheatmap(top_INFG_genes_matrix,
+pheatmap::pheatmap(top_INFG_genes_matrix_top30_by_sig,
                    clustering_method = "ward.D2",
                    cluster_cols = FALSE,
                    color = hmcols,
@@ -341,8 +387,8 @@ pheatmap::pheatmap(top_INFG_genes_matrix,
                    cutree_rows = 6,
                    treeheight_row = 10,
                    fontsize = 6,
-                   fontsize_col = 4,
-                   height = 2.75,
+                   fontsize_col = 6,
+                   height = 3,
                    width = 1.4,
                    border_color = NA,
                    file = "/home/user/Documents/Kinase_project/figures/crispria_combined/figures_degs/top_INFG_genes.pdf")
@@ -351,25 +397,26 @@ pheatmap::pheatmap(top_INFG_genes_matrix,
 ```{r}
 
 # only keep beta column
-top_NFKB_genes_matrix <- NFKB_data_matrix %>% 
+top_NFKB_genes_matrix_top30_by_sig <- NFKB_data_matrix_top30_by_sig %>% 
   select(gene_id, beta_i,beta_a) %>% 
+  rename(CRISPRi = beta_i, CRISPRa = beta_a) %>% 
   as.data.frame()
 
-row.names(top_NFKB_genes_matrix) <- top_NFKB_genes_matrix$gene_id
-top_NFKB_genes_matrix$gene_id <- NULL
+row.names(top_NFKB_genes_matrix_top30_by_sig) <- top_NFKB_genes_matrix_top30_by_sig$gene_id
+top_NFKB_genes_matrix_top30_by_sig$gene_id <- NULL
 hmcols <- colorRampPalette(c("blue","white","red"))(35)
 
 paletteLength <- 35
-myBreaks <- c(seq(min(top_NFKB_genes_matrix), 0, length.out=ceiling(paletteLength/2) + 1),
-              seq(max(top_NFKB_genes_matrix)/paletteLength, max(top_NFKB_genes_matrix), length.out=floor(paletteLength/2)))
+myBreaks <- c(seq(min(top_NFKB_genes_matrix_top30_by_sig), 0, length.out=ceiling(paletteLength/2) + 1),
+              seq(max(top_NFKB_genes_matrix_top30_by_sig)/paletteLength, max(top_NFKB_genes_matrix_top30_by_sig), length.out=floor(paletteLength/2)))
 
-annotation_df <- data.frame(row.names = colnames(top_NFKB_genes_matrix), 
-                            condition_id = colnames(top_NFKB_genes_matrix))
+annotation_df <- data.frame(row.names = colnames(top_NFKB_genes_matrix_top30_by_sig), 
+                            condition_id = colnames(top_NFKB_genes_matrix_top30_by_sig))
 
 
 ```
 ```{r}
-pheatmap::pheatmap(top_NFKB_genes_matrix,
+pheatmap::pheatmap(top_NFKB_genes_matrix_top30_by_sig,
                    clustering_method = "ward.D2",
                    cluster_cols = FALSE,
                    color = hmcols,
@@ -377,13 +424,13 @@ pheatmap::pheatmap(top_NFKB_genes_matrix,
                    cutree_rows = 6,
                    treeheight_row = 10,
                    fontsize = 6,
-                   fontsize_col = 4,
-                   height = 2.75,
+                   fontsize_col = 6,
+                   height = 3,
                    width = 1.4,
                    border_color = NA,
                    file = "/home/user/Documents/Kinase_project/figures/crispria_combined/figures_degs/top_NFKB_genes.png")
 
-pheatmap::pheatmap(top_NFKB_genes_matrix,
+pheatmap::pheatmap(top_NFKB_genes_matrix_top30_by_sig,
                    clustering_method = "ward.D2",
                    cluster_cols = FALSE,
                    color = hmcols,
@@ -391,8 +438,8 @@ pheatmap::pheatmap(top_NFKB_genes_matrix,
                    cutree_rows = 6,
                    treeheight_row = 10,
                    fontsize = 6,
-                   fontsize_col = 4,
-                   height = 2.75,
+                   fontsize_col = 6,
+                   height = 3,
                    width = 1.4,
                    border_color = NA,
                    file = "/home/user/Documents/Kinase_project/figures/crispria_combined/figures_degs/top_NFKB_genes.pdf")
@@ -402,10 +449,10 @@ pheatmap::pheatmap(top_NFKB_genes_matrix,
 
 ```{r}
 # Your four gene sets
-genes1 <- rownames(top_APM_MHC_CII_genes_matrix)
-genes2 <- rownames(top_APM_MHC_CI_genes_matrix)
-genes3 <- rownames(top_INFG_genes_matrix)
-genes4 <- rownames(top_NFKB_genes_matrix)
+genes1 <- APM_MHC_CI_score_data_matrix$gene_id
+genes2 <- APM_MHC_CII_score_data_matrix$gene_id
+genes3 <- INFG_data_matrix$gene_id
+genes4 <- NFKB_data_matrix$gene_id
 
 # Quick overlap counts
 length(intersect(genes1, genes2))
@@ -422,10 +469,10 @@ library(grid)
 
 venn.diagram(
   x = list(
-    MHC_CII = genes1,
-    MHC_CI  = genes2,
-    IFNG        = genes3,
-    NFKB        = genes4
+    MHC_CI = genes1,
+    MHC_CII  = genes2,
+    IFNG    = genes3,
+    NFKB    = genes4
   ),
   filename = "/home/user/Documents/Kinase_project/figures/crispria_combined/figures_degs/venn_APM_IFNG_NFKB.png",
   imagetype = "png",
