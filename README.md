@@ -10,6 +10,15 @@ https://www.biorxiv.org/content/10.64898/2026.01.08.698516v1
 
 
 
+## Preprocessing pipeline
+
+Raw data processing (hash demultiplexing and CROP-seq alignment) is based on the following pipelines:
+
+- **Hash + CROP-seq processing**: adapted from [mcfaline-figueroa-lab/sci-Plex-EGFRi](https://github.com/mcfaline-figueroa-lab/sci-Plex-EGFRi/tree/main/process_from_raw)
+- **CROP-seq processing**: adapted from [cole-trapnell-lab/sci-Plex-GxE](https://github.com/cole-trapnell-lab/sci-Plex-GxE/tree/main/process_from_raw)
+
+Our version of the preprocessing pipeline will be added to this repository shortly.
+
 ## Repository structure
 
 - `Kinome_sceen_T_cells_coculture/` – Kinome screen T cell co-culture analyses (R Markdown, Python notebooks, Decipher and MrVI sub-analyses).
