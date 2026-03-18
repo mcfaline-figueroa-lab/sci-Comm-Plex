@@ -2,7 +2,10 @@
 title: "BT333 T-cells Analysis - Figures Only"
 output: html_notebook
 ---
-
+```{r}
+gc()
+rm(list = ls())
+```
 ```{r}
 library(devtools)
 library(parallel)
@@ -102,102 +105,6 @@ colData(cds)$drug_dose <- factor(cell_data$drug_dose)
 ```{r}
 # Remove NA oligos
 cds <-cds[,!is.na(colData(cds)$oligo)]
-```
-
-```{r}
-# Create QC output directory
-qc_dir <- file.path(outdir, "QC_summaries")
-if (!dir.exists(qc_dir)) {
-  dir.create(qc_dir, recursive = TRUE)
-}
-
-# ============================================
-# Overall Summary Statistics
-# ============================================
-overall_summary <- data.frame(
-  Metric = c(
-    "Total Cells",
-    "Total Genes",
-    "Mean UMI per Cell",
-    "Median UMI per Cell",
-    "SD UMI per Cell",
-    "Mean Genes Detected per Cell",
-    "Median Genes Detected per Cell",
-    "Mean Cells per Gene",
-    "Median Cells per Gene",
-    "Genes Detected in >5% Cells",
-    "Genes Detected in >10% Cells",
-    "Genes Detected in >50% Cells"
-  ),
-  Value = c(
-    ncol(cds),
-    nrow(cds),
-    mean(colData(cds)$n.umi),
-    median(colData(cds)$n.umi),
-    sd(colData(cds)$n.umi),
-    mean(Matrix::colSums(exprs(cds) > 0)),
-    median(Matrix::colSums(exprs(cds) > 0)),
-    mean(Matrix::rowSums(exprs(cds) > 0)),
-    median(Matrix::rowSums(exprs(cds) > 0)),
-    sum(Matrix::rowSums(exprs(cds) > 0) > ncol(cds) * 0.05),
-    sum(Matrix::rowSums(exprs(cds) > 0) > ncol(cds) * 0.10),
-    sum(Matrix::rowSums(exprs(cds) > 0) > ncol(cds) * 0.50)
-  )
-)
-
-write.csv(overall_summary, 
-          file.path(qc_dir, "overall_summary.csv"), 
-          row.names = FALSE)
-
-print("Overall Summary:")
-print(overall_summary)
-
-# ============================================
-# Summary by Perturbation (gene_id) and Dose
-# ============================================
-
-# Overall summary by perturbation
-perturbation_summary <- colData(cds) %>%
-  as.data.frame() %>%
-  group_by(Drug) %>%
-  summarise(
-    n_cells = n(),
-    percent_of_total = round(n() / ncol(cds) * 100, 2),
-    .groups = "drop"
-  ) %>%
-  arrange(desc(n_cells))
-
-# Summary by perturbation AND dose
-perturbation_dose_summary <- colData(cds) %>%
-  as.data.frame() %>%
-  group_by(Drug, Dose) %>%
-  summarise(n_cells = n(), .groups = "drop")
-
-# Cell count statistics per dose
-dose_stats <- perturbation_dose_summary %>%
-  group_by(Dose) %>%
-  summarise(
-    n_perturbations = n(),
-    total_cells = sum(n_cells),
-    mean_cells_per_perturbation = round(mean(n_cells), 2),
-    median_cells_per_perturbation = round(median(n_cells), 2),
-    sd_cells = round(sd(n_cells), 2),
-    min_cells = min(n_cells),
-    max_cells = max(n_cells),
-    .groups = "drop"
-  ) %>%
-  arrange(Dose)
-
-write.csv(dose_stats, file.path(qc_dir, "perturbation_dose_stats.csv"), row.names = FALSE)
-print("\nCell count statistics by dose:")
-print(dose_stats)
-
-# Optional: wide format showing cells per perturbation at each dose
-perturbation_wide <- perturbation_dose_summary %>%
-  pivot_wider(names_from = Dose, values_from = n_cells, names_prefix = "dose_")
-
-write.csv(perturbation_wide, file.path(qc_dir, "perturbation_by_dose.csv"), row.names = FALSE)
-
 ```
 
 ```{r}
@@ -819,7 +726,7 @@ for (drug in unique(drug_data$Drug)) {
           legend.key.size = unit(0.4, "cm"),
           axis.text.x = element_text(size = 8)) +
     xlab("Dose (µM)") +
-    ylab("Tcell_dose_response_score") +
+    ylab("T cell induced program") +
     ggtitle(paste0(drug))
   
   ggsave(file.path(outdir, paste0(drug, "_Tcell_dose_response_score_comparison.png")), 
@@ -849,7 +756,7 @@ ggplot(plot_data,
         legend.position = "none",
         axis.text.x = element_text(size = 4, angle = 45, hjust = 1)) +
   xlab("T-cell treatment") +
-  ylab("Tcell_dose_response_score") +
+  ylab(" cell induced program") +
   ggpubr::stat_compare_means(size = 1.5, 
                             method = "t.test",
                             label = "p.signif", 
@@ -864,3 +771,4 @@ saveRDS(cds, "preprocessed_cds_with_gene_sig.rds")
 ```{r}
 
 ```
+

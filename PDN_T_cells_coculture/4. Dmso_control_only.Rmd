@@ -55,7 +55,7 @@ estimateDispersionsForCellDataSet <- function(cds, min_cells_detected = 100, rem
 cds <- readRDS("/home/user/Documents/Kinase_project/20250430_BT333_Tcell_11chems_run2/11-final-output/CDS_BT333_Tcells_0_cutoff.RDS")
 
 # Load differential test results
-Tcell_dose_response_diff_test <- readRDS("/home/user/Documents/Kinase_project/20250206novogen_CRISPRA_run5_correct/Figure1/NTC_CRISPRI_dose_response_diff_test_20240905_replicates_ori.rds")
+Tcell_dose_response_diff_test <- readRDS("/home/user/Documents/Kinase_project/crispra_final/CRISPRA_Figures/NTC_analysis/DEG_testing/NTC_CRISPR_dose_response_diff_test_replicates.rds")
 
 print(paste("Loaded CDS with", ncol(cds), "cells"))
 ```
@@ -290,10 +290,12 @@ strip.text = element_text(size = 6),
 strip.placement = "outside",
 panel.spacing = unit(0.2, "lines"),
 line = element_line(size = 0.2)) +
-  stat_compare_means(size = 3, 
-method = "t.test",
-label = "p.signif", 
-label.x = 1.5)
+  stat_compare_means(
+    method = "t.test",
+    label = "p.signif", 
+    label.x = 1.5,
+    label.y.npc = 0.95,
+    size = 2)
 
 p
 ggsave(paste0(out_dir, "/combined_violin_plots.png"), width = 1, height = 2, dpi = 600)
